@@ -1,18 +1,9 @@
-import React, { useCallback, useMemo, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+// app/screens/AdminScreen.js
+import React, { useCallback, useMemo, useState, useEffect } from 'react';
+import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, ActivityIndicator } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useLanguage } from '../context/LanguageContext';
-import {
-  getPsychiatristApplications,
-  updatePsychiatristApplicationStatus
-} from '../utils/psychiatristVerificationStorage';
-
-const allUsers = [
-  { id: 1, name: 'Sarah M.', role: 'patient', email: 'sarah@email.com', status: 'active' },
-  { id: 2, name: 'Ahmed K.', role: 'patient', email: 'ahmed@email.com', status: 'active' },
-  { id: 3, name: 'Dr. Ayesha Khan', role: 'psychologist', email: 'ayesha@email.com', status: 'active' },
-  { id: 4, name: 'Dr. Omar Farooq', role: 'psychologist', email: 'omar@email.com', status: 'suspended' },
-];
+import { getStoredToken, request } from '../utils/apiService';
 
 const ADMIN_EMAIL = 'admin@mindwell.test';
 const ADMIN_PASSWORD = 'admin123';
@@ -26,85 +17,168 @@ export default function AdminScreen({ navigation }) {
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [stats, setStats] = useState({
+    totalUsers: 0,
+    totalPsychiatrists: 0,
+    pendingPsychiatrists: 0,
+    totalSessions: 0,
+    totalRevenue: 0
+  });
 
-  const loadApplications = useCallback(async () => {
-    setApplications(await getPsychiatristApplications());
+  // ─── Load pending psychiatrists from backend ──────────────
+  const loadPendingPsychiatrists = useCallback(async () => {
+    try {
+      setLoading(true);
+      console.log('📥 Fetching pending psychiatrists from backend...');
+      
+      const response = await request({
+        path: '/admin/psychiatrists/pending',
+        method: 'GET',
+        auth: true
+      });
+
+      console.log('📥 Response:', response);
+
+      if (response && response.success) {
+        setApplications(response.data || []);
+        console.log(`✅ Loaded ${response.data?.length || 0} pending applications`);
+      } else {
+        console.log('⚠️ No pending applications found');
+        setApplications([]);
+      }
+    } catch (error) {
+      console.error('❌ Error loading pending psychiatrists:', error.message);
+      // If API fails, try the hardcoded data as fallback
+      setApplications([]);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
+  // ─── Load dashboard stats ────────────────────────────────
+  const loadStats = useCallback(async () => {
+    try {
+      const response = await request({
+        path: '/admin/dashboard',
+        method: 'GET',
+        auth: true
+      });
+
+      if (response && response.success) {
+        setStats(response.data || {});
+      }
+    } catch (error) {
+      console.error('❌ Error loading stats:', error.message);
+    }
+  }, []);
+
+  // ─── Load data when screen is focused ────────────────────
   useFocusEffect(
     useCallback(() => {
-      loadApplications();
-    }, [loadApplications])
+      if (authorized) {
+        loadPendingPsychiatrists();
+        loadStats();
+      }
+    }, [authorized, loadPendingPsychiatrists, loadStats])
   );
 
-  const pendingPsychs = useMemo(
-    () => applications.filter(item => item.status === 'pending'),
-    [applications]
-  );
-  const approvedCount = applications.filter(item => item.status === 'approved').length;
-
-  const stats = [
-    { label: 'Total Users', value: String(247 + applications.length), marker: 'U', color: '#6C63FF' },
-    { label: 'Approved Psychiatrists', value: String(approvedCount), marker: 'DR', color: '#1D9E75' },
-    { label: 'Pending Verification', value: String(pendingPsychs.length), marker: 'P', color: '#FFC107' },
-    { label: 'Active Sessions', value: '12', marker: 'S', color: '#FF6B6B' },
-  ];
-
-  const handleApprove = (psych) => {
-    Alert.alert('Approve psychiatrist', `Approve ${psych.name}?`, [
+  // ─── Approve psychiatrist ──────────────────────────────────
+  const handleApprove = async (psych) => {
+    Alert.alert('Approve Psychiatrist', `Approve ${psych.name}?`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Approve',
         onPress: async () => {
-          await updatePsychiatristApplicationStatus(psych.id, 'approved');
-          await loadApplications();
-          Alert.alert('Approved', `${psych.name} can now login as a psychiatrist.`);
+          try {
+            const response = await request({
+              path: `/admin/psychiatrists/verify/${psych._id}`,
+              method: 'PUT',
+              body: { status: 'active' },
+              auth: true
+            });
+
+            if (response && response.success) {
+              Alert.alert('✅ Approved', `${psych.name} can now login as a psychiatrist.`);
+              loadPendingPsychiatrists();
+              loadStats();
+            } else {
+              Alert.alert('❌ Error', response?.message || 'Could not approve');
+            }
+          } catch (error) {
+            console.error('Approve error:', error);
+            Alert.alert('❌ Error', error.message || 'Could not approve');
+          }
         }
       }
     ]);
   };
 
-  const handleReject = (psych) => {
-    Alert.alert('Reject application', `Reject ${psych.name}'s verification?`, [
+  // ─── Reject psychiatrist ──────────────────────────────────
+  const handleReject = async (psych) => {
+    Alert.alert('Reject Application', `Reject ${psych.name}'s verification?`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Reject',
         style: 'destructive',
         onPress: async () => {
-          await updatePsychiatristApplicationStatus(psych.id, 'rejected');
-          await loadApplications();
-          Alert.alert('Rejected', 'Application has been rejected.');
+          try {
+            const response = await request({
+              path: `/admin/psychiatrists/verify/${psych._id}`,
+              method: 'PUT',
+              body: { status: 'rejected' },
+              auth: true
+            });
+
+            if (response && response.success) {
+              Alert.alert('✅ Rejected', 'Application has been rejected.');
+              loadPendingPsychiatrists();
+              loadStats();
+            } else {
+              Alert.alert('❌ Error', response?.message || 'Could not reject');
+            }
+          } catch (error) {
+            console.error('Reject error:', error);
+            Alert.alert('❌ Error', error.message || 'Could not reject');
+          }
         }
       }
     ]);
   };
 
-  const handleSuspend = (user) => {
-    Alert.alert('Suspend', `Suspend ${user.name}'s account?`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Suspend', style: 'destructive', onPress: () => Alert.alert('Account Suspended') }
-    ]);
-  };
-
-  const searchedUsers = allUsers.filter(user =>
-    user.name.toLowerCase().includes(search.toLowerCase())
-    || user.email.toLowerCase().includes(search.toLowerCase())
-  );
-  const searchedApplications = applications.filter(user =>
-    user.name.toLowerCase().includes(search.toLowerCase())
-    || user.email.toLowerCase().includes(search.toLowerCase())
-  );
-
-  const handleAdminLogin = () => {
+  const handleAdminLogin = async () => {
     const email = adminEmail.trim().toLowerCase();
-    if (email !== ADMIN_EMAIL || adminPassword !== ADMIN_PASSWORD) {
-      Alert.alert('Access denied', 'Invalid admin email or password.');
-      return;
+    
+    try {
+      const response = await request({
+        path: '/admin/login',
+        method: 'POST',
+        body: { email, password: adminPassword },
+        auth: false
+      });
+
+      if (response && response.success) {
+        setAuthorized(true);
+        setAdminPassword('');
+        // Store token
+        const token = response.token;
+        if (token) {
+          const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+          await AsyncStorage.setItem('mindwell_auth_token', token);
+        }
+        loadPendingPsychiatrists();
+        loadStats();
+        Alert.alert('✅ Login successful', 'Welcome to Admin Panel');
+      } else {
+        Alert.alert('❌ Login failed', response?.message || 'Invalid credentials');
+      }
+    } catch (error) {
+      console.error('Admin login error:', error);
+      Alert.alert('❌ Login failed', error.message || 'Could not login');
     }
-    setAuthorized(true);
-    setAdminPassword('');
   };
 
+  // ─── If not authorized, show login ────────────────────────
   if (!authorized) {
     return (
       <View style={styles.container}>
@@ -168,6 +242,16 @@ export default function AdminScreen({ navigation }) {
     );
   }
 
+  // ─── Stats cards ──────────────────────────────────────────
+  const statsData = [
+    { label: 'Total Users', value: String(stats.totalPatients || 0), marker: 'U', color: '#6C63FF' },
+    { label: 'Total Psychiatrists', value: String(stats.totalPsychiatrists || 0), marker: 'DR', color: '#1D9E75' },
+    { label: 'Pending Verification', value: String(stats.pendingPsychiatrists || 0), marker: 'P', color: '#FFC107' },
+    { label: 'Total Sessions', value: String(stats.totalSessions || 0), marker: 'S', color: '#FF6B6B' },
+  ];
+
+  const pendingCount = applications.length;
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -182,7 +266,7 @@ export default function AdminScreen({ navigation }) {
 
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.statsGrid}>
-          {stats.map(item => (
+          {statsData.map(item => (
             <View key={item.label} style={[styles.statCard, { borderLeftColor: item.color }]}>
               <Text style={[styles.statMarker, { color: item.color }]}>{item.marker}</Text>
               <Text style={[styles.statVal, { color: item.color }]}>{item.value}</Text>
@@ -195,7 +279,7 @@ export default function AdminScreen({ navigation }) {
           {['verification', 'users', 'security'].map(item => (
             <TouchableOpacity key={item} style={[styles.tab, tab === item && styles.tabActive]} onPress={() => setTab(item)}>
               <Text style={[styles.tabText, tab === item && styles.tabTextActive]}>
-                {item === 'verification' ? 'Verify' : item === 'users' ? 'Users' : 'Security'}
+                {item === 'verification' ? `Verify (${pendingCount})` : item === 'users' ? 'Users' : 'Security'}
               </Text>
             </TouchableOpacity>
           ))}
@@ -203,116 +287,87 @@ export default function AdminScreen({ navigation }) {
 
         {tab === 'verification' && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Pending Psychiatrist Verification ({pendingPsychs.length})</Text>
-            {pendingPsychs.length === 0 && (
+            <Text style={styles.sectionTitle}>Pending Psychiatrist Verification ({pendingCount})</Text>
+            
+            {loading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#6C63FF" />
+                <Text style={styles.loadingText}>Loading pending applications...</Text>
+              </View>
+            ) : pendingCount === 0 ? (
               <View style={styles.emptyCard}>
                 <Text style={styles.emptyTitle}>No pending applications</Text>
-                <Text style={styles.emptyText}>New psychiatrist registrations will appear here with verification ID and certifications.</Text>
-              </View>
-            )}
-
-            {pendingPsychs.map(psych => (
-              <View key={psych.id} style={styles.verifyCard}>
-                <View style={styles.verifyTop}>
-                  <View>
-                    <Text style={styles.verifyName}>{psych.name}</Text>
-                    <Text style={styles.verifyMeta}>{psych.specialty}</Text>
-                  </View>
-                  <View style={styles.pendingBadge}>
-                    <Text style={styles.pendingText}>PENDING</Text>
-                  </View>
-                </View>
-
-                <Text style={styles.verifyLine}>Email: {psych.email}</Text>
-                <Text style={styles.verifyLine}>Phone: {psych.phone || 'Not provided'}</Text>
-                <Text style={styles.verifyLine}>Verification ID: {psych.verificationId}</Text>
-
-                <View style={styles.certBox}>
-                  <Text style={styles.certTitle}>Official certifications</Text>
-                  <Text style={styles.certText}>{psych.certifications}</Text>
-                </View>
-
-                <Text style={styles.submittedText}>
-                  Submitted: {psych.submittedAt ? new Date(psych.submittedAt).toLocaleDateString() : 'Today'}
+                <Text style={styles.emptyText}>
+                  New psychiatrist registrations will appear here with verification ID and certifications.
                 </Text>
-
-                <View style={styles.verifyActions}>
-                  <TouchableOpacity style={styles.approveBtn} onPress={() => handleApprove(psych)}>
-                    <Text style={styles.approveBtnText}>{t.approve}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.rejectBtn} onPress={() => handleReject(psych)}>
-                    <Text style={styles.rejectBtnText}>{t.reject}</Text>
-                  </TouchableOpacity>
-                </View>
               </View>
-            ))}
+            ) : (
+              applications.map(psych => (
+                <View key={psych._id} style={styles.verifyCard}>
+                  <View style={styles.verifyTop}>
+                    <View>
+                      <Text style={styles.verifyName}>{psych.name}</Text>
+                      <Text style={styles.verifyMeta}>{psych.specialization || 'No specialization'}</Text>
+                    </View>
+                    <View style={styles.pendingBadge}>
+                      <Text style={styles.pendingText}>PENDING</Text>
+                    </View>
+                  </View>
+
+                  <Text style={styles.verifyLine}>Email: {psych.email}</Text>
+                  <Text style={styles.verifyLine}>Phone: {psych.phone_no || 'Not provided'}</Text>
+                  <Text style={styles.verifyLine}>License: {psych.license_number || 'Not provided'}</Text>
+                  <Text style={styles.verifyLine}>Certifications: {psych.certifications || 'Not provided'}</Text>
+
+                  <Text style={styles.submittedText}>
+                    Submitted: {psych.createdAt ? new Date(psych.createdAt).toLocaleDateString() : 'Recently'}
+                  </Text>
+
+                  <View style={styles.verifyActions}>
+                    <TouchableOpacity style={styles.approveBtn} onPress={() => handleApprove(psych)}>
+                      <Text style={styles.approveBtnText}>{t.approve}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.rejectBtn} onPress={() => handleReject(psych)}>
+                      <Text style={styles.rejectBtnText}>{t.reject}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))
+            )}
           </View>
         )}
 
         {tab === 'users' && (
           <View style={styles.section}>
-            <View style={styles.searchBox}>
-              <Text style={styles.searchIcon}>Search</Text>
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search users..."
-                placeholderTextColor="#aaa"
-                value={search}
-                onChangeText={setSearch}
-              />
+            <Text style={styles.sectionTitle}>User Management</Text>
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyTitle}>User management coming soon</Text>
+              <Text style={styles.emptyText}>View and manage all users from the database.</Text>
             </View>
-            <Text style={styles.sectionTitle}>Psychiatrist Applications</Text>
-            {searchedApplications.map(user => (
-              <View key={user.id} style={styles.userCard}>
-                <View style={styles.userLeft}>
-                  <Text style={styles.userName}>{user.name}</Text>
-                  <Text style={styles.userMeta}>psychiatrist - {user.email}</Text>
-                </View>
-                <View style={[styles.userBadge, { backgroundColor: statusBg(user.status) }]}>
-                  <Text style={[styles.userBadgeText, { color: statusColor(user.status) }]}>{user.status}</Text>
-                </View>
-              </View>
-            ))}
-
-            <Text style={styles.sectionTitle}>All Users</Text>
-            {searchedUsers.map(user => (
-              <View key={user.id} style={styles.userCard}>
-                <View style={styles.userLeft}>
-                  <Text style={styles.userName}>{user.name}</Text>
-                  <Text style={styles.userMeta}>{user.role} - {user.email}</Text>
-                </View>
-                <View style={styles.userRight}>
-                  <View style={[styles.userBadge, { backgroundColor: user.status === 'active' ? '#E8F5E9' : '#FFEBEE' }]}>
-                    <Text style={[styles.userBadgeText, { color: user.status === 'active' ? '#1D9E75' : '#FF6B6B' }]}>
-                      {user.status}
-                    </Text>
-                  </View>
-                  <TouchableOpacity onPress={() => handleSuspend(user)}>
-                    <Text style={styles.suspendText}>{t.suspend}</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))}
           </View>
         )}
 
         {tab === 'security' && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Platform Security</Text>
-            {[
-              { title: 'Verification Gate', value: 'Psychiatrist login locked until admin approval', color: '#1D9E75' },
-              { title: 'Two-Factor Auth', value: 'Mandatory for psychiatrist accounts', color: '#1D9E75' },
-              { title: 'Pending Reviews', value: `${pendingPsychs.length} applications`, color: '#FFC107' },
-              { title: 'Rejected Applications', value: `${applications.filter(item => item.status === 'rejected').length} rejected`, color: '#FF6B6B' },
-            ].map(item => (
-              <View key={item.title} style={styles.securityRow}>
-                <View style={styles.securityInfo}>
-                  <Text style={styles.securityTitle}>{item.title}</Text>
-                  <Text style={[styles.securityValue, { color: item.color }]}>{item.value}</Text>
-                </View>
-                <View style={[styles.securityDot, { backgroundColor: item.color }]} />
+            <View style={styles.securityRow}>
+              <View style={styles.securityInfo}>
+                <Text style={styles.securityTitle}>Verification Gate</Text>
+                <Text style={[styles.securityValue, { color: '#1D9E75' }]}>
+                  Psychiatrist login locked until admin approval
+                </Text>
               </View>
-            ))}
+              <View style={[styles.securityDot, { backgroundColor: '#1D9E75' }]} />
+            </View>
+            <View style={styles.securityRow}>
+              <View style={styles.securityInfo}>
+                <Text style={styles.securityTitle}>Pending Reviews</Text>
+                <Text style={[styles.securityValue, { color: '#FFC107' }]}>
+                  {pendingCount} applications pending
+                </Text>
+              </View>
+              <View style={[styles.securityDot, { backgroundColor: '#FFC107' }]} />
+            </View>
           </View>
         )}
         <View style={styles.bottomSpace} />
@@ -321,9 +376,7 @@ export default function AdminScreen({ navigation }) {
   );
 }
 
-const statusColor = status => status === 'approved' ? '#1D9E75' : status === 'pending' ? '#F57F17' : '#FF6B6B';
-const statusBg = status => status === 'approved' ? '#E8F5E9' : status === 'pending' ? '#FFF9C4' : '#FFEBEE';
-
+// ─── Styles ──────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F0EFFF' },
   header: { backgroundColor: '#1a1a2e', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, paddingTop: 50 },
@@ -360,6 +413,8 @@ const styles = StyleSheet.create({
   tabTextActive: { color: '#fff' },
   section: { paddingHorizontal: 16 },
   sectionTitle: { fontSize: 16, fontWeight: '800', color: '#1a1a2e', marginBottom: 12, marginTop: 4 },
+  loadingContainer: { alignItems: 'center', paddingVertical: 40 },
+  loadingText: { color: '#777', fontSize: 13, marginTop: 12 },
   emptyCard: { backgroundColor: '#fff', borderRadius: 14, padding: 18, marginBottom: 12, elevation: 2, alignItems: 'center' },
   emptyTitle: { color: '#1a1a2e', fontSize: 15, fontWeight: '800' },
   emptyText: { color: '#777', fontSize: 12, textAlign: 'center', lineHeight: 17, marginTop: 4 },
@@ -370,26 +425,12 @@ const styles = StyleSheet.create({
   pendingBadge: { backgroundColor: '#FFF9C4', borderRadius: 12, paddingHorizontal: 9, paddingVertical: 5 },
   pendingText: { color: '#F57F17', fontSize: 10, fontWeight: '900' },
   verifyLine: { fontSize: 12, color: '#777', marginTop: 5 },
-  certBox: { backgroundColor: '#F8F8FC', borderRadius: 10, padding: 12, marginTop: 10 },
-  certTitle: { color: '#1a1a2e', fontSize: 12, fontWeight: '800' },
-  certText: { color: '#555', fontSize: 12, lineHeight: 17, marginTop: 4 },
   submittedText: { color: '#999', fontSize: 11, marginTop: 9 },
   verifyActions: { flexDirection: 'row', gap: 8, marginTop: 12 },
   approveBtn: { flex: 1, backgroundColor: '#E8F5E9', paddingVertical: 10, borderRadius: 10, alignItems: 'center', borderWidth: 1.5, borderColor: '#1D9E75' },
   approveBtnText: { color: '#1D9E75', fontWeight: '800' },
   rejectBtn: { flex: 1, backgroundColor: '#FFEBEE', paddingVertical: 10, borderRadius: 10, alignItems: 'center', borderWidth: 1.5, borderColor: '#FF6B6B' },
   rejectBtnText: { color: '#FF6B6B', fontWeight: '800' },
-  searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, paddingHorizontal: 14, marginBottom: 12, elevation: 2 },
-  searchIcon: { color: '#6C63FF', fontSize: 12, fontWeight: '800', marginRight: 8 },
-  searchInput: { flex: 1, paddingVertical: 10, fontSize: 14, color: '#333' },
-  userCard: { backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', elevation: 2 },
-  userLeft: { flex: 1, paddingRight: 10 },
-  userName: { fontSize: 15, fontWeight: '800', color: '#1a1a2e' },
-  userMeta: { fontSize: 12, color: '#888', marginTop: 2 },
-  userRight: { alignItems: 'flex-end', gap: 4 },
-  userBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
-  userBadgeText: { fontSize: 11, fontWeight: '800', textTransform: 'capitalize' },
-  suspendText: { color: '#FF6B6B', fontSize: 12, fontWeight: '700' },
   securityRow: { backgroundColor: '#fff', borderRadius: 12, padding: 14, flexDirection: 'row', alignItems: 'center', marginBottom: 8, elevation: 2 },
   securityInfo: { flex: 1 },
   securityTitle: { fontSize: 14, fontWeight: '800', color: '#1a1a2e' },

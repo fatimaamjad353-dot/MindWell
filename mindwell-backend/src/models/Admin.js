@@ -23,18 +23,22 @@ const AdminSchema = new mongoose.Schema(
       type: String,
       default: 'admin',
     },
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
   },
   {
     timestamps: true,
   }
 );
 
-// ─── Compare password method ────────────────────────────────
-AdminSchema.methods.comparePassword = async function (password) {
+// ─── Compare password ────────────────────────────────────────
+AdminSchema.methods.comparePassword = async function(password) {
   return await bcrypt.compare(password, this.password);
 };
 
-// ─── ToJSON to remove password ──────────────────────────────
+// ─── Remove password from JSON ──────────────────────────────
 AdminSchema.methods.toJSON = function () {
   const obj = this.toObject();
   delete obj.password;
