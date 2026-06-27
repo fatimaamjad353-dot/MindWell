@@ -1,0 +1,93 @@
+# ─── Node.js ──────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# ─── Python ──────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+*.egg-info/
+dist/
+build/
+
+# ─── AI Models (LARGE FILES - DO NOT UPLOAD) ──────────────
+*.safetensors
+*.bin
+*.h5
+*.pb
+*.onnx
+*.tflite
+*.joblib
+*.pkl
+checkpoint-*/
+*/checkpoint-*/
+
+# ─── Model Folders ──────────────────────────────────────────
+mindwell-backend/src/ai-service/psych_diag_model/
+mindwell-backend/src/ai-service/psych_arabic_model/
+mindwell-backend/src/ai-service/psych_roman_diag_model/
+mindwell-backend/src/ai-service/psych_sev_model/
+mindwell-backend/src/ai-service/psych_arabic_diag_model/
+mindwell-backend/src/ai-models/psychiatric_model/
+
+# ─── Environment Files ──────────────────────────────────────
+.env
+.env.local
+.env.production
+.env.development
+
+# ─── IDE and OS Files ──────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── Logs ────────────────────────────────────────────────────
+logs/
+*.log
+
+# ─── Temporary Files ────────────────────────────────────────
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# ─── Database Files ──────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+
+# ─── Expo / React Native ─────────────────────────────────────
+.expo/
+dist/
+web-build/
+
+# ─── Android / iOS Builds ────────────────────────────────────
+android/app/build/
+ios/Pods/
+*.apk
+*.ipa
+
+# ─── Secrets ──────────────────────────────────────────────────
+*.pem
+*.key
+*.crt
+*.cer
+
+# ─── Backup Files ────────────────────────────────────────────
+*.orig
+*.old
+*.sav
