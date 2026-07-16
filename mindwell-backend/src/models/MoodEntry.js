@@ -3,13 +3,11 @@ const mongoose = require('mongoose');
 
 const MoodEntrySchema = new mongoose.Schema(
   {
-    // ── Use "patientId" to match controller ──────────────────
     patientId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Patient',
       required: true,
     },
-    // ── Use "moodScore" to match controller ─────────────────
     moodScore: {
       type: Number,
       required: true,
@@ -35,7 +33,6 @@ const MoodEntrySchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
-    // ── AI Analysis ──────────────────────────────────────────
     aiAnalysis: {
       sentiment: {
         type: String,
@@ -52,7 +49,6 @@ const MoodEntrySchema = new mongoose.Schema(
         default: '',
       },
     },
-    // ── Use "timestamp" to match controller ──────────────────
     timestamp: {
       type: Date,
       default: Date.now,

@@ -1,3 +1,4 @@
+// app/utils/apiService.js
 import { API_BASE_URL } from './apiConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -36,46 +37,46 @@ export const setAuthToken = async (token) => {
 export const getStoredToken = async () => AsyncStorage.getItem(AUTH_TOKEN_KEY);
 
 export const request = async ({ path, method = 'GET', body, auth = true }) => {
-  const headers = await buildHeaders();
-  const options = {
-    method,
-    headers,
-  };
+    const headers = await buildHeaders();
+    const options = {
+        method,
+        headers,
+    };
 
-  // ✅ Create a copy of the body for the request (keep original data)
-  const safeBody = body !== undefined && body !== null ? { ...body } : undefined;
-  
-  // ✅ Create a separate copy for logging (don't modify the actual body)
-  const logBody = safeBody ? { ...safeBody } : undefined;
-  if (logBody && logBody.password) {
-    logBody.password = '***';  // Only for logging, not for the request
-  }
-
-  // ✅ Use the original safeBody for the request (with the actual password)
-  if (safeBody) {
-    options.body = JSON.stringify(safeBody);
-  }
-
-  console.log(`[API][${method}] ${path}`, logBody || {});
-
-  try {
-    const response = await fetch(`${API_BASE_URL}${path}`, options);
-    const data = await parseJson(response);
-
-    console.log(`[API][${method}] ${path} ->`, response.status, data);
-
-    if (!response.ok) {
-      const message = data?.message || 'Request failed';
-      throw new Error(message);
+    const safeBody = body !== undefined && body !== null ? { ...body } : undefined;
+    
+    const logBody = safeBody ? { ...safeBody } : undefined;
+    if (logBody && logBody.password) {
+        logBody.password = '***';
     }
 
-    return data;
-  } catch (error) {
-    console.log(`[API][${method}] ${path} ERROR`, error.message || error);
-    throw error;
-  }
-};
+    if (safeBody) {
+        options.body = JSON.stringify(safeBody);
+    }
 
+    console.log(`[API][${method}] ${path}`, logBody || {});
+
+    try {
+        const response = await fetch(`${API_BASE_URL}${path}`, options);
+        const data = await parseJson(response);
+
+        console.log(`[API][${method}] ${path} ->`, response.status, data);
+
+        // ─── ✅ Return the error response data ─────────────────────
+        if (!response.ok) {
+            // Return the error data so the caller can handle it
+            const errorData = data || { message: 'Request failed' };
+            console.log('❌ API Error Data:', errorData);
+            throw errorData;
+        }
+
+        return data;
+    } catch (error) {
+        console.log(`[API][${method}] ${path} ERROR`, error.message || error);
+        // Re-throw so the caller can handle it
+        throw error;
+    }
+};
 // ─── Auth Functions ──────────────────────────────────────
 
 export const registerPatient = (payload) => request({ 
@@ -101,6 +102,105 @@ export const loginPsychiatrist = (payload) => request({
   method: 'POST', 
   body: payload 
 });
+
+// ─── OTP Functions ──────────────────────────────────────
+
+
+export const sendOTP = (payload) => request({
+    path: '/auth/send-otp',
+    method: 'POST',
+    body: payload,
+    auth: false
+});
+
+export const verifyOTP = (payload) => request({
+    path: '/auth/verify-otp',
+    method: 'POST',
+    body: payload,
+    auth: false
+});
+
+export const resendOTP = (payload) => request({
+    path: '/auth/send-otp',
+    method: 'POST',
+    body: payload,
+    auth: false
+});
+
+// ─── Email Validation Functions ───────────────────────────────
+
+export const validateEmailFormat = (email) => {
+    const trimmed = email.trim();
+    
+    if (!trimmed) {
+        return { valid: false, message: 'Email is required' };
+    }
+    
+    if (!trimmed.includes('@')) {
+        return { valid: false, message: 'Email must contain "@"' };
+    }
+    
+    const parts = trimmed.split('@');
+    if (parts.length !== 2) {
+        return { valid: false, message: 'Invalid email format' };
+    }
+    
+    const domain = parts[1];
+    if (!domain || !domain.includes('.')) {
+        return { valid: false, message: 'Email must have a valid domain (e.g., .com)' };
+    }
+    
+    if (domain.length < 3) {
+        return { valid: false, message: 'Email domain is too short' };
+    }
+    
+    // Common typos fix
+    const typos = {
+        'gmail.con': 'gmail.com',
+        'gmial.com': 'gmail.com',
+        'gmil.com': 'gmail.com',
+        'gmal.com': 'gmail.com',
+        'gmaill.com': 'gmail.com',
+        'yahoo.con': 'yahoo.com',
+        'hotmail.con': 'hotmail.com',
+        'outlook.con': 'outlook.com',
+    };
+    
+    const corrected = typos[domain] ? `${parts[0]}@${typos[domain]}` : null;
+    
+    return { 
+        valid: true, 
+        message: 'Valid email format',
+        corrected: corrected
+    };
+};
+
+export const isDisposableEmail = (email) => {
+    const domain = email.split('@')[1]?.toLowerCase();
+    if (!domain) return false;
+    
+    const disposableDomains = [
+        'mailinator.com', 'guerrillamail.com', '10minutemail.com',
+        'tempmail.com', 'yopmail.com', 'getnada.com',
+        'trashmail.com', 'maildrop.cc', 'temp-mail.org'
+    ];
+    
+    return disposableDomains.some(d => domain.includes(d));
+};
+
+export const validateEmailFull = (email) => {
+    const formatResult = validateEmailFormat(email);
+    if (!formatResult.valid) return formatResult;
+    
+    if (isDisposableEmail(email)) {
+        return { 
+            valid: false, 
+            message: 'Temporary email addresses are not allowed. Please use a real email address.'
+        };
+    }
+    
+    return { valid: true, message: 'Valid email' };
+};
 
 // ─── Mood Functions ──────────────────────────────────────
 

@@ -72,7 +72,6 @@ class AIService {
                 console.log('✅ Diagnosis received:', response.data);
                 const data = response.data;
                 
-                // ── Extract diagnosis ──────────────────────────
                 const diagnosis = data.diagnosis || null;
                 const confidence = data.confidence || 0;
                 const severity = data.severity || 5;
@@ -99,15 +98,15 @@ class AIService {
                     escalatedToHuman = true;
                 }
 
-                // ── Build AI Response ────────────────────────────
-                let aiResponse = '';
-                
-                if (escalatedToHuman) {
-                    aiResponse = `⚠️ I hear you're in pain. Please call the crisis helpline: 0317-4288665. I'm connecting you with a professional now.`;
-                } else if (diagnosis && diagnosis !== 'Unknown' && confidence > 30) {
-                    aiResponse = `I notice patterns consistent with ${diagnosis} (${confidence.toFixed(1)}% confidence).`;
+                // ─── ✅ ONLY ONE RECOMMENDER CALL ──────────────
+                let recommendations = [];
+                let shouldRecommend = false;
+
+                // ✅ ONLY call recommender if severity >= 6 (Moderate or High)
+                if (severity >= 6 && diagnosis && diagnosis !== 'Unknown') {
+                    shouldRecommend = true;
+                    console.log(`🎯 Severity ${severity} - Getting recommendations...`);
                     
-                    // Add recommendations if available
                     try {
                         const recommenderResult = await this.callRecommender({
                             patient_name: userName || 'Patient',
@@ -120,17 +119,46 @@ class AIService {
                         });
                         
                         if (recommenderResult.success && recommenderResult.psychologists?.length > 0) {
-                            const names = recommenderResult.psychologists.slice(0, 2).map(r => r.name).join(', ');
-                            aiResponse += ` I recommend speaking with: ${names}. Would you like to book a session?`;
+                            recommendations = recommenderResult.psychologists.slice(0, 2);
+                            console.log(`✅ Found ${recommendations.length} recommendations`);
                         } else {
-                            aiResponse += ` Would you like to learn more or speak with a professional?`;
+                            console.log('⚠️ No recommendations found');
                         }
                     } catch (e) {
                         console.log('⚠️ Recommender failed:', e.message);
-                        aiResponse += ` Would you like to learn more or speak with a professional?`;
                     }
                 } else {
-                    // ── Fallback: Use a more helpful response ────
+                    console.log(`ℹ️ Severity ${severity} - Skipping recommendations (threshold is >= 6)`);
+                }
+
+                // ── Build AI Response ────────────────────────────
+                let aiResponse = '';
+
+                if (escalatedToHuman) {
+                    aiResponse = `⚠️ I hear you're in pain. Please call the crisis helpline: 0317-4288665. I'm connecting you with a professional now.`;
+                } else if (diagnosis && diagnosis !== 'Unknown' && confidence > 30) {
+                    const severityLabel = severity >= 7 ? 'High' : severity >= 5 ? 'Moderate' : 'Low';
+                    
+                    aiResponse = `I notice patterns consistent with **${diagnosis}** (${confidence.toFixed(1)}% confidence).`;
+                    aiResponse += `\n\n📊 **Severity:** ${severityLabel} (${severity}/10)`;
+                    
+                    // ── ✅ Only add recommendations if severity is Moderate or High ──
+                    if (shouldRecommend && recommendations.length > 0) {
+                        const names = recommendations.map(r => r.name).join(', ');
+                        aiResponse += `\n\nGiven the **${severityLabel} severity**, I recommend speaking with:\n• ${names}`;
+                        aiResponse += `\n\nWould you like to book a session with one of them?`;
+                    } else if (severity < 6) {
+                        aiResponse += `\n\nYour symptoms appear mild. Here are some self-care tips:\n• Practice deep breathing exercises\n• Maintain a regular sleep schedule\n• Stay connected with friends and family`;
+                        
+                        if (diagnosis === 'Anxiety') {
+                            aiResponse += `\n• Try the 4-7-8 breathing technique when anxious`;
+                        } else if (diagnosis === 'Depression') {
+                            aiResponse += `\n• Try a 10-minute walk outside each day`;
+                        }
+                    } else {
+                        aiResponse += `\n\nWould you like to learn more about this or speak with a professional?`;
+                    }
+                } else {
                     const fallbackResponses = [
                         "I hear you. It sounds like you're going through a tough time. Can you tell me more about what's been on your mind lately? 💙",
                         "Thank you for sharing that with me. I'm here to listen. What else is going on for you right now?",
@@ -138,27 +166,6 @@ class AIService {
                         "That sounds difficult. I'm here to support you. Would you like to explore some coping strategies together?"
                     ];
                     aiResponse = fallbackResponses[Math.floor(Math.random() * fallbackResponses.length)];
-                }
-
-                // ── Get recommendations ──────────────────────────
-                let recommendations = [];
-                try {
-                    if (diagnosis && diagnosis !== 'Unknown') {
-                        const recommenderResult = await this.callRecommender({
-                            patient_name: userName || 'Patient',
-                            diagnosis: diagnosis,
-                            severity_score: severity,
-                            session_preference: 'video',
-                            language: 'english',
-                            mood_logs: [],
-                            chatbot_messages: [message]
-                        });
-                        if (recommenderResult.success) {
-                            recommendations = recommenderResult.psychologists || [];
-                        }
-                    }
-                } catch (e) {
-                    console.log('⚠️ Recommender failed:', e.message);
                 }
 
                 return {
@@ -172,7 +179,8 @@ class AIService {
                     usedFAQ: false,
                     intent: (diagnosis || 'general').toLowerCase().replace(/\s+/g, '_'),
                     language: 'english',
-                    recommendations: recommendations
+                    recommendations: recommendations,
+                    severityLabel: severity >= 7 ? 'High' : severity >= 5 ? 'Moderate' : 'Low'
                 };
 
             } catch (apiError) {

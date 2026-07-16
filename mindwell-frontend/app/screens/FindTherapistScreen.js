@@ -1,4 +1,4 @@
- 
+// app/screens/FindTherapistScreen.js
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -23,18 +23,30 @@ export default function FindTherapistScreen({ navigation, route }) {
       setLoading(true);
       try {
         const response = await searchTherapists({ specialization: search || undefined });
-        setTherapists((response?.data || []).map(therapist => ({
+        
+        // ─── Format therapists from backend ──────────────────
+        const formattedTherapists = (response?.data || []).map(therapist => ({
           id: therapist._id,
           name: therapist.name,
-          specialty: therapist.specialization || therapist.specializations?.[0] || 'General Psychiatry',
+          // ✅ Use ONLY specializations (not specialization)
+          specializations: therapist.specializations || [],
+          specialty: therapist.specializations?.[0] || therapist.specialization || 'General Psychiatry',
           experience: therapist.experience_years ? `${therapist.experience_years} years` : 'Experienced',
-          rating: therapist.avg_rating || 4.8,
-          sessions: therapist.total_patients || 0,
-          available: therapist.isAvailable,
+          rating: therapist.avg_rating || 4.5,
           fee: therapist.session_rate || 2500,
-          emoji: '👨‍⚕️',
-          about: therapist.hospital ? `${therapist.name} is available at ${therapist.hospital}.` : 'Experienced therapist ready for sessions.'
-        })));
+          available: therapist.isAvailable,
+          sessions: therapist.total_patients || 0,
+          hospital: therapist.hospital || '',
+          about: therapist.hospital 
+            ? `${therapist.name} is available at ${therapist.hospital}.` 
+            : 'Experienced therapist ready for sessions.',
+          languages: therapist.languages || ['English'],
+          sessionTypes: therapist.session_types || ['video'],
+          contact: therapist.contact || '',
+          emoji: '👨‍⚕️'
+        }));
+        
+        setTherapists(formattedTherapists);
       } catch (error) {
         Alert.alert('Unable to load therapists', error.message || 'Please try again.');
       } finally {
@@ -45,32 +57,54 @@ export default function FindTherapistScreen({ navigation, route }) {
     loadTherapists();
   }, [search]);
 
+  // ─── Calculate match score ──────────────────────────────────
   const getMatchScore = therapist => {
-    const specialtyMatch = recommendedSpecialties.includes(therapist.specialty) ? 3 : 0;
+    // Check if any of the therapist's specializations match the recommended ones
+    const matchingSpecialties = therapist.specializations?.filter(s => 
+      recommendedSpecialties.includes(s)
+    ) || [];
+    
+    const specialtyMatch = matchingSpecialties.length > 0 ? 3 : 0;
     const directMatch = therapist.id === recommendedDoctorId ? 4 : 0;
     const themeMatch = patientSummary?.themes?.some(theme =>
-      therapist.specialty.toLowerCase().includes(theme.toLowerCase().split(' ')[0])
+      therapist.specialty?.toLowerCase().includes(theme.toLowerCase().split(' ')[0])
     ) ? 2 : 0;
     return directMatch + specialtyMatch + themeMatch + (therapist.available ? 1 : 0);
   };
 
+  // ─── Filter and sort therapists ─────────────────────────────
   const filtered = [...therapists]
-    .filter(t =>
-      t.name.toLowerCase().includes(search.toLowerCase()) ||
-      t.specialty.toLowerCase().includes(search.toLowerCase())
-    )
+    .filter(t => {
+      const searchLower = search.toLowerCase();
+      const nameMatch = t.name.toLowerCase().includes(searchLower);
+      const specialtyMatch = t.specialties?.some(s => 
+        s.toLowerCase().includes(searchLower)
+      );
+      return nameMatch || specialtyMatch;
+    })
     .sort((a, b) => getMatchScore(b) - getMatchScore(a) || b.rating - a.rating);
 
   const handleBook = (therapist) => {
     navigation.navigate('Booking', {
-      therapist,
+      therapist: {
+        id: therapist.id,
+        name: therapist.name,
+        specialty: therapist.specialty,
+        specializations: therapist.specializations,
+        fee: therapist.fee,
+        available: therapist.available,
+        rating: therapist.rating,
+        experience: therapist.experience,
+        hospital: therapist.hospital,
+        about: therapist.about,
+        emoji: therapist.emoji
+      },
       initialSessionType: sessionType
     });
   };
 
   return (
     <View style={styles.container}>
-
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -150,7 +184,9 @@ export default function FindTherapistScreen({ navigation, route }) {
                 </View>
                 <View style={styles.cardInfo}>
                   <Text style={styles.cardName}>{therapist.name}</Text>
-                  <Text style={styles.cardSpecialty}>{therapist.specialty}</Text>
+                  <Text style={styles.cardSpecialty}>
+                    {therapist.specializations?.join(', ') || therapist.specialty || 'General Psychiatry'}
+                  </Text>
                   <View style={styles.cardMeta}>
                     <Text style={styles.metaText}>⭐ {therapist.rating}</Text>
                     <Text style={styles.metaDot}>•</Text>
@@ -181,6 +217,21 @@ export default function FindTherapistScreen({ navigation, route }) {
               {selected === therapist.id && (
                 <View style={styles.expanded}>
                   <Text style={styles.aboutText}>{therapist.about}</Text>
+                  
+                  {/* Show specializations list */}
+                  {therapist.specializations?.length > 0 && (
+                    <View style={styles.specialtiesContainer}>
+                      <Text style={styles.specialtiesTitle}>Specializations:</Text>
+                      <View style={styles.specialtiesRow}>
+                        {therapist.specializations.map((spec, index) => (
+                          <View key={index} style={styles.specialtyTag}>
+                            <Text style={styles.specialtyTagText}>{spec}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  )}
+
                   {getMatchScore(therapist) > 0 && (
                     <View style={styles.recommendReason}>
                       <Text style={styles.recommendReasonTitle}>Why this matches</Text>
@@ -225,35 +276,26 @@ export default function FindTherapistScreen({ navigation, route }) {
   );
 }
 
+// ─── Styles ──────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F0EFFF' },
-
-  // Header
   header: { backgroundColor: '#6C63FF', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, paddingTop: 50 },
   back: { fontSize: 24, color: '#fff', fontWeight: '700' },
   headerTitle: { fontSize: 18, fontWeight: '700', color: '#fff' },
-
-  // Search
   matchSummary: { backgroundColor: '#fff', margin: 16, marginBottom: 0, borderRadius: 14, padding: 14, elevation: 2, borderLeftWidth: 4, borderLeftColor: '#1D9E75' },
   matchSummaryTitle: { color: '#1a1a2e', fontSize: 14, fontWeight: '800' },
   matchSummaryText: { color: '#666', fontSize: 12, lineHeight: 17, marginTop: 4 },
   searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', margin: 16, borderRadius: 14, paddingHorizontal: 14, elevation: 3 },
   searchIcon: { fontSize: 18, marginRight: 8 },
   searchInput: { flex: 1, paddingVertical: 12, fontSize: 15, color: '#333' },
-
-  // Section
   section: { paddingHorizontal: 16, marginBottom: 12 },
   sectionTitle: { fontSize: 17, fontWeight: '700', color: '#1a1a2e', marginBottom: 12 },
-
-  // Session Type
   typeRow: { flexDirection: 'row', justifyContent: 'space-between' },
   typeBtn: { flex: 1, alignItems: 'center', padding: 12, borderRadius: 12, backgroundColor: '#fff', marginHorizontal: 4, elevation: 2 },
   typeBtnActive: { backgroundColor: '#6C63FF' },
   typeEmoji: { fontSize: 22, marginBottom: 4 },
   typeText: { fontSize: 13, fontWeight: '600', color: '#555' },
   typeTextActive: { color: '#fff' },
-
-  // Card
   card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 12, elevation: 3 },
   cardHeader: { flexDirection: 'row', alignItems: 'center' },
   avatarBox: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#F0EFFF', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
@@ -268,10 +310,13 @@ const styles = StyleSheet.create({
   availText: { fontSize: 12, fontWeight: '600' },
   matchBadge: { backgroundColor: '#E8F5E9', borderRadius: 11, paddingHorizontal: 8, paddingVertical: 5, marginRight: 6 },
   matchBadgeText: { color: '#1D9E75', fontSize: 10, fontWeight: '800' },
-
-  // Expanded
   expanded: { marginTop: 16, borderTopWidth: 1, borderTopColor: '#f0f0f0', paddingTop: 16 },
   aboutText: { fontSize: 14, color: '#555', lineHeight: 20, marginBottom: 12 },
+  specialtiesContainer: { marginBottom: 12 },
+  specialtiesTitle: { fontSize: 12, fontWeight: '700', color: '#333', marginBottom: 6 },
+  specialtiesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  specialtyTag: { backgroundColor: '#F0EFFF', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 },
+  specialtyTagText: { color: '#6C63FF', fontSize: 11, fontWeight: '600' },
   recommendReason: { backgroundColor: '#E8F5E9', borderRadius: 10, padding: 12, marginBottom: 12 },
   recommendReasonTitle: { color: '#1D6F54', fontSize: 12, fontWeight: '800' },
   recommendReasonText: { color: '#427D68', fontSize: 11, lineHeight: 16, marginTop: 3 },

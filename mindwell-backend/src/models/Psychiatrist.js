@@ -25,10 +25,6 @@ const PsychiatristSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
-    specialization: {
-      type: String,
-      default: '',
-    },
     specializations: {
       type: [String],
       default: [],

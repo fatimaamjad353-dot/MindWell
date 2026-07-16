@@ -4,10 +4,7 @@ const Patient = require('../models/Patient');
 const Psychiatrist = require('../models/Psychiatrist');
 const Payment = require('../models/Payment');
 
-/**
- * Book a session
- * POST /api/sessions/book
- */
+// ─── Book a session ─────────────────────────────────────────────
 exports.bookSession = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -79,10 +76,7 @@ exports.bookSession = async (req, res) => {
   }
 };
 
-/**
- * Get my sessions
- * GET /api/sessions/my
- */
+// ─── Get my sessions ────────────────────────────────────────────
 exports.getMySessions = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -115,10 +109,7 @@ exports.getMySessions = async (req, res) => {
   }
 };
 
-/**
- * Get a specific session
- * GET /api/sessions/:id
- */
+// ─── Get a specific session ─────────────────────────────────────
 exports.getSession = async (req, res) => {
   try {
     const { id } = req.params;
@@ -159,10 +150,7 @@ exports.getSession = async (req, res) => {
   }
 };
 
-/**
- * Cancel a session
- * DELETE /api/sessions/cancel/:id
- */
+// ─── Cancel a session ──────────────────────────────────────────
 exports.cancelSession = async (req, res) => {
   try {
     const { id } = req.params;
@@ -206,10 +194,7 @@ exports.cancelSession = async (req, res) => {
   }
 };
 
-/**
- * Rate a session
- * POST /api/sessions/rate/:id
- */
+// ─── Rate a session ────────────────────────────────────────────
 exports.rateSession = async (req, res) => {
   try {
     const { id } = req.params;
@@ -259,24 +244,20 @@ exports.rateSession = async (req, res) => {
   }
 };
 
-/**
- * Search therapists
- * GET /api/sessions/search
- */
+// ─── Search therapists ─────────────────────────────────────────
+// ─── Search therapists ─────────────────────────────────────────
 exports.searchTherapists = async (req, res) => {
   try {
     const { specialization, diagnosis, language, type, available } = req.query;
 
-    console.log('🔍 Searching therapists with query:', req.query);
+    console.log('🔍 Searching therapists with:', { specialization, diagnosis });
 
     let query = { isVerified: true };
 
-    if (specialization) {
-      query.specializations = { $in: [specialization] };
-    }
-
-    if (diagnosis) {
-      query.specializations = { $in: [diagnosis] };
+    // ✅ Use ONLY specializations (array)
+    const searchTerm = specialization || diagnosis;
+    if (searchTerm) {
+      query.specializations = { $in: [searchTerm] };
     }
 
     if (language) {
@@ -288,9 +269,7 @@ exports.searchTherapists = async (req, res) => {
     }
 
     const therapists = await Psychiatrist.find(query)
-      .select('name email specializations experience_years session_rate languages session_types avg_rating total_patients isAvailable contact');
-
-    console.log(`✅ Found ${therapists.length} therapists`);
+      .select('name email specializations experience_years session_rate languages session_types avg_rating total_patients isAvailable contact hospital');
 
     res.json({
       success: true,
@@ -305,11 +284,7 @@ exports.searchTherapists = async (req, res) => {
     });
   }
 };
-
-/**
- * Get psychiatrist availability
- * GET /api/sessions/psychiatrist/availability/:id
- */
+// ─── Get psychiatrist availability ─────────────────────────────
 exports.getAvailability = async (req, res) => {
   try {
     const { id } = req.params;
@@ -361,10 +336,7 @@ exports.getAvailability = async (req, res) => {
   }
 };
 
-/**
- * Get psychiatrist profile
- * GET /api/sessions/psychiatrist/:id
- */
+// ─── Get psychiatrist profile ─────────────────────────────────
 exports.getPsychiatristProfile = async (req, res) => {
   try {
     const { id } = req.params;

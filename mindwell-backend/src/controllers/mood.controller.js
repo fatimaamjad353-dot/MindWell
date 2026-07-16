@@ -1,6 +1,7 @@
+// src/controllers/mood.controller.js
 const MoodEntry = require('../models/MoodEntry');
 
-// ─── Analyze Mood (Simple AI Logic) ──────────────
+// ─── Analyze Mood ──────────────────────────────────────────────
 const analyzeMood = (moodScore, moodType, notes) => {
   let sentiment = 'Neutral';
   let riskLevel = 'Low';
@@ -33,8 +34,8 @@ const analyzeMood = (moodScore, moodType, notes) => {
   return { sentiment, riskLevel, suggestion };
 };
 
-// ─── LOG MOOD ─────────────────────────────────────
-const logMood = async (req, res) => {
+// ─── LOG MOOD ──────────────────────────────────────────────────
+exports.logMood = async (req, res) => {
   try {
     const { moodScore, moodType, notes, activities } = req.body;
 
@@ -48,7 +49,7 @@ const logMood = async (req, res) => {
     const aiAnalysis = analyzeMood(moodScore, moodType, notes);
 
     const moodEntry = await MoodEntry.create({
-      patientId: req.user._id,
+      patientId: req.user.id,
       moodScore,
       moodType,
       notes,
@@ -69,11 +70,11 @@ const logMood = async (req, res) => {
   }
 };
 
-// ─── GET ALL MOODS ────────────────────────────────
-const getAllMoods = async (req, res) => {
+// ─── GET ALL MOODS ─────────────────────────────────────────────
+exports.getAllMoods = async (req, res) => {
   try {
     const moods = await MoodEntry.find({
-      patientId: req.user._id
+      patientId: req.user.id
     }).sort({ timestamp: -1 });
 
     res.status(200).json({
@@ -87,8 +88,8 @@ const getAllMoods = async (req, res) => {
   }
 };
 
-// ─── GET TODAY'S MOOD ─────────────────────────────
-const getTodayMood = async (req, res) => {
+// ─── GET TODAY'S MOOD ──────────────────────────────────────────
+exports.getTodayMood = async (req, res) => {
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -97,7 +98,7 @@ const getTodayMood = async (req, res) => {
     tomorrow.setDate(tomorrow.getDate() + 1);
 
     const moods = await MoodEntry.find({
-      patientId: req.user._id,
+      patientId: req.user.id,
       timestamp: { $gte: today, $lt: tomorrow }
     });
 
@@ -112,15 +113,15 @@ const getTodayMood = async (req, res) => {
   }
 };
 
-// ─── GET WEEKLY SUMMARY ───────────────────────────
-const getWeeklySummary = async (req, res) => {
+// ─── GET WEEKLY SUMMARY ────────────────────────────────────────
+exports.getWeeklySummary = async (req, res) => {
   try {
     const today = new Date();
     const sevenDaysAgo = new Date(today);
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
     const moods = await MoodEntry.find({
-      patientId: req.user._id,
+      patientId: req.user.id,
       timestamp: { $gte: sevenDaysAgo }
     }).sort({ timestamp: 1 });
 
@@ -162,15 +163,15 @@ const getWeeklySummary = async (req, res) => {
   }
 };
 
-// ─── GET MONTHLY SUMMARY ──────────────────────────
-const getMonthlySummary = async (req, res) => {
+// ─── GET MONTHLY SUMMARY ──────────────────────────────────────
+exports.getMonthlySummary = async (req, res) => {
   try {
     const today = new Date();
     const thirtyDaysAgo = new Date(today);
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
     const moods = await MoodEntry.find({
-      patientId: req.user._id,
+      patientId: req.user.id,
       timestamp: { $gte: thirtyDaysAgo }
     }).sort({ timestamp: 1 });
 
@@ -182,18 +183,15 @@ const getMonthlySummary = async (req, res) => {
       });
     }
 
-    // Average mood score
     const avgScore = moods.reduce(
       (sum, entry) => sum + entry.moodScore, 0
     ) / moods.length;
 
-    // Mood type breakdown
     const moodCount = {};
     moods.forEach(entry => {
       moodCount[entry.moodType] = (moodCount[entry.moodType] || 0) + 1;
     });
 
-    // Risk level breakdown
     const riskCount = { Low: 0, Medium: 0, High: 0 };
     moods.forEach(entry => {
       riskCount[entry.aiAnalysis.riskLevel]++;
@@ -238,8 +236,8 @@ const getMonthlySummary = async (req, res) => {
   }
 };
 
-// ─── DELETE MOOD ENTRY ────────────────────────────
-const deleteMoodEntry = async (req, res) => {
+// ─── DELETE MOOD ENTRY ────────────────────────────────────────
+exports.deleteMoodEntry = async (req, res) => {
   try {
     const mood = await MoodEntry.findById(req.params.id);
 
@@ -250,7 +248,7 @@ const deleteMoodEntry = async (req, res) => {
       });
     }
 
-    if (mood.patientId.toString() !== req.user._id.toString()) {
+    if (mood.patientId.toString() !== req.user.id.toString()) {
       return res.status(401).json({
         success: false,
         message: 'Not authorized to delete this entry'
@@ -267,13 +265,4 @@ const deleteMoodEntry = async (req, res) => {
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
-};
-
-module.exports = {
-  logMood,
-  getAllMoods,
-  getTodayMood,
-  getWeeklySummary,
-  getMonthlySummary, 
-  deleteMoodEntry
 };
