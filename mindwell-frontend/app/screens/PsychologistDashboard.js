@@ -1,15 +1,33 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, Image } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useLanguage } from '../context/LanguageContext';
 import { getRatings } from '../utils/ratingStorage';
 import { getProfile } from '../utils/profileStorage';
+import { getPsychiatristDashboard } from '../utils/apiService'; // Add this import
 
 export default function PsychologistDashboard({ route, navigation }) {
   const { t } = useLanguage();
   const user = route.params?.user;
   const [ratings, setRatings] = useState([]);
   const [profile, setProfile] = useState(user || {});
+  const [dashboardData, setDashboardData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch dashboard data on mount
+  useEffect(() => {
+    const loadDashboard = async () => {
+      try {
+        const result = await getPsychiatristDashboard();
+        setDashboardData(result.data);
+      } catch (error) {
+        console.error('Dashboard error:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadDashboard();
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -65,14 +83,36 @@ export default function PsychologistDashboard({ route, navigation }) {
     return 'Recent feedback suggests reviewing patient comments and follow-up practices.';
   }, [averageRating]);
 
+  // Updated stats with real data from dashboard
   const stats = [
-    { label: t.sessionsToday, value: '3', emoji: '📅', color: '#6C63FF' },
-    { label: t.myPatients, value: '24', emoji: '👥', color: '#1D9E75' },
-    { label: t.earnings, value: 'PKR 72K', emoji: '💰', color: '#F4A261' },
-    { label: 'Rating', value: '4.9 ⭐', emoji: '🏆', color: '#FF6B6B' },
+    { 
+      label: t.sessionsToday, 
+      value: dashboardData?.todaysSessionCount?.toString() || '0', 
+      emoji: '📅', 
+      color: '#6C63FF' 
+    },
+    { 
+      label: t.myPatients, 
+      value: dashboardData?.totalPatients?.toString() || '0', 
+      emoji: '👥', 
+      color: '#1D9E75' 
+    },
+    { 
+      label: t.earnings, 
+      value: dashboardData?.totalEarnings ? `PKR ${dashboardData.totalEarnings.toLocaleString()}` : 'PKR 0', 
+      emoji: '💰', 
+      color: '#F4A261' 
+    },
+    { 
+      label: 'Rating', 
+      value: dashboardData?.averageRating ? `${dashboardData.averageRating} ⭐` : 'No ratings', 
+      emoji: '🏆', 
+      color: '#FF6B6B' 
+    },
   ];
 
-  const upcomingSessions = [
+  // Use real data for upcoming sessions
+  const upcomingSessions = dashboardData?.todaysSessions || [
     { patient: 'Sarah M.', time: '10:00 AM', type: 'Video', risk: 'high' },
     { patient: 'Ahmed K.', time: '12:00 PM', type: 'Audio', risk: 'medium' },
     { patient: 'Fatima R.', time: '3:00 PM', type: 'Text', risk: 'low' },
@@ -104,16 +144,28 @@ export default function PsychologistDashboard({ route, navigation }) {
     { emoji: 'REQ', title: 'Appointments', subtitle: 'Review booking requests', color: '#0081CF', screen: 'PsychAppointments' },
   ];
 
+  // Updated dashboard stats mapping
   const dashboardStats = stats.map(stat =>
     stat.label === 'Rating'
       ? {
           ...stat,
           label: 'Patient Rating',
-          value: averageRating ? `${averageRating} ★` : 'No ratings',
+          value: dashboardData?.averageRating 
+            ? `${Number(dashboardData.averageRating).toFixed(1)} ★` 
+            : 'No ratings',
           emoji: '★'
         }
       : stat
   );
+
+  // Show loading state
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <Text style={styles.loadingText}>Loading dashboard...</Text>
+      </View>
+    );
+  }
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
@@ -121,7 +173,9 @@ export default function PsychologistDashboard({ route, navigation }) {
         <View style={styles.headerRow}>
           <View>
             <Text style={styles.greeting}>{t.welcomeDoctor} {user?.name || 'Doctor'} 👨‍⚕️</Text>
-            <Text style={styles.greetingSub}>3 {t.sessionsToday}</Text>
+            <Text style={styles.greetingSub}>
+              {dashboardData?.todaysSessionCount || 0} {t.sessionsToday}
+            </Text>
           </View>
           <TouchableOpacity
             style={styles.headerSettings}
@@ -157,7 +211,11 @@ export default function PsychologistDashboard({ route, navigation }) {
               <Text style={styles.performanceMessage}>{performanceMessage}</Text>
             </View>
             <View style={styles.averageBadge}>
-              <Text style={styles.averageValue}>{averageRating || '—'}</Text>
+              <Text style={styles.averageValue}>
+                {dashboardData?.averageRating 
+                  ? Number(dashboardData.averageRating).toFixed(1) 
+                  : '—'}
+              </Text>
               <Text style={styles.averageStars}>★★★★★</Text>
             </View>
           </View>
@@ -176,7 +234,11 @@ export default function PsychologistDashboard({ route, navigation }) {
                 </View>
                 <View style={styles.metricDivider} />
                 <View style={styles.performanceMetric}>
-                  <Text style={styles.metricValue}>{averageRating}</Text>
+                  <Text style={styles.metricValue}>
+                    {dashboardData?.averageRating 
+                      ? Number(dashboardData.averageRating).toFixed(1) 
+                      : '—'}
+                  </Text>
                   <Text style={styles.metricLabel}>Average</Text>
                 </View>
               </View>
@@ -288,94 +350,6 @@ export default function PsychologistDashboard({ route, navigation }) {
         </View>
       </View>
 
-      {false && <View style={styles.section}>
-        <View style={styles.performanceCard}>
-          <View style={styles.performanceHeader}>
-            <View style={styles.performanceHeading}>
-              <Text style={styles.performanceTitle}>Performance Overview</Text>
-              <Text style={styles.performanceMessage}>{performanceMessage}</Text>
-            </View>
-            <View style={styles.averageBadge}>
-              <Text style={styles.averageValue}>{averageRating || '—'}</Text>
-              <Text style={styles.averageStars}>★★★★★</Text>
-            </View>
-          </View>
-
-          {ratings.length ? (
-            <>
-              <View style={styles.performanceMetrics}>
-                <View style={styles.performanceMetric}>
-                  <Text style={styles.metricValue}>{ratings.length}</Text>
-                  <Text style={styles.metricLabel}>Reviews</Text>
-                </View>
-                <View style={styles.metricDivider} />
-                <View style={styles.performanceMetric}>
-                  <Text style={styles.metricValue}>{positiveFeedback}%</Text>
-                  <Text style={styles.metricLabel}>Positive</Text>
-                </View>
-                <View style={styles.metricDivider} />
-                <View style={styles.performanceMetric}>
-                  <Text style={styles.metricValue}>
-                    {Math.max(...ratings.map(rating => rating.stars))}
-                  </Text>
-                  <Text style={styles.metricLabel}>Highest</Text>
-                </View>
-              </View>
-
-              <Text style={styles.graphTitle}>Recent Rating Trend</Text>
-              <View style={styles.performanceGraph}>
-                {performanceTrend.map((rating, index) => (
-                  <View key={rating.id} style={styles.performanceBarItem}>
-                    <Text style={styles.performanceBarValue}>{rating.stars}</Text>
-                    <View style={styles.performanceBarTrack}>
-                      <View
-                        style={[
-                          styles.performanceBar,
-                          {
-                            height: `${rating.stars * 20}%`,
-                            backgroundColor:
-                              rating.stars >= 4
-                                ? '#1D9E75'
-                                : rating.stars === 3
-                                  ? '#FFC107'
-                                  : '#FF6B6B'
-                          }
-                        ]}
-                      />
-                    </View>
-                    <Text style={styles.performanceBarLabel}>R{index + 1}</Text>
-                  </View>
-                ))}
-              </View>
-
-              <Text style={styles.graphTitle}>Rating Distribution</Text>
-              {ratingDistribution.map(item => (
-                <View key={item.stars} style={styles.distributionRow}>
-                  <Text style={styles.distributionLabel}>{item.stars} ★</Text>
-                  <View style={styles.distributionTrack}>
-                    <View
-                      style={[
-                        styles.distributionFill,
-                        { width: `${item.percent}%` }
-                      ]}
-                    />
-                  </View>
-                  <Text style={styles.distributionCount}>{item.count}</Text>
-                </View>
-              ))}
-            </>
-          ) : (
-            <View style={styles.performanceEmpty}>
-              <Text style={styles.performanceEmptyIcon}>📊</Text>
-              <Text style={styles.performanceEmptyTitle}>No performance data yet</Text>
-              <Text style={styles.performanceEmptyText}>
-                This graph will update when patients submit ratings after completed sessions.
-              </Text>
-            </View>
-          )}
-        </View>
-      </View>}
-
       <View style={styles.section}>
         <View style={styles.feedbackHeader}>
           <Text style={styles.sectionTitle}>Patient Feedback</Text>
@@ -413,8 +387,17 @@ export default function PsychologistDashboard({ route, navigation }) {
     </ScrollView>
   );
 }
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F0EFFF' },
+  loadingContainer: { 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  loadingText: { 
+    fontSize: 16, 
+    color: '#666' 
+  },
   header: { backgroundColor: '#1D9E75', padding: 24, paddingTop: 55 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   greeting: { fontSize: 20, fontWeight: '700', color: '#fff' },

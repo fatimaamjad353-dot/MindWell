@@ -17,6 +17,15 @@ exports.bookSession = async (req, res) => {
       bookingSource,
     } = req.body;
 
+    console.log('📝 Booking session received:', { 
+      psychiatristId, 
+      dateTime, 
+      sessionType, 
+      agreedRate,
+      userId 
+    });
+
+    // ─── Validation ──────────────────────────────────────────────
     if (!psychiatristId) {
       return res.status(400).json({
         success: false,
@@ -24,6 +33,28 @@ exports.bookSession = async (req, res) => {
       });
     }
 
+    if (!dateTime) {
+      return res.status(400).json({
+        success: false,
+        message: 'Date and time are required',
+      });
+    }
+
+    if (!sessionType) {
+      return res.status(400).json({
+        success: false,
+        message: 'Session type is required',
+      });
+    }
+
+    if (!agreedRate) {
+      return res.status(400).json({
+        success: false,
+        message: 'Session rate is required',
+      });
+    }
+
+    // ─── Check if psychiatrist exists ────────────────────────────
     const psychiatrist = await Psychiatrist.findById(psychiatristId);
     if (!psychiatrist) {
       return res.status(404).json({
@@ -32,43 +63,51 @@ exports.bookSession = async (req, res) => {
       });
     }
 
-    let sessionDate = dateTime || new Date();
-    let sessionTime = '00:00';
-
-    if (dateTime) {
-      const dt = new Date(dateTime);
-      if (!isNaN(dt.getTime())) {
-        sessionDate = dt;
-        sessionTime = dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      }
+    // ─── Normalize session type (capitalize first letter) ────────
+    const normalizedSessionType = sessionType.charAt(0).toUpperCase() + sessionType.slice(1).toLowerCase();
+    
+    const validSessionTypes = ['Audio', 'Video', 'Text'];
+    if (!validSessionTypes.includes(normalizedSessionType)) {
+      return res.status(400).json({
+        success: false,
+        message: `Session type must be one of: ${validSessionTypes.join(', ')}`,
+      });
     }
 
-    const session = new Session({
-      patient: userId,
-      psychologist: psychiatristId,
-      date: sessionDate,
-      time: sessionTime,
-      type: (sessionType || 'video').toLowerCase(),
-      status: 'pending',
-      paymentStatus: 'unpaid',
-      amount: agreedRate || psychiatrist.session_rate || 50,
-      notes: notes || '',
-      bookingSource: bookingSource || 'Mobile App',
-    });
+    // ─── Normalize booking source ────────────────────────────────
+    const normalizedSource = bookingSource === 'AI_Recommended' ? 'AI_Recommended' : 'Manual';
 
+    // ─── Create session with correct field names ─────────────────
+    const sessionData = {
+      patientId: userId,
+      psychiatristId: psychiatristId,
+      dateTime: new Date(dateTime),
+      sessionType: normalizedSessionType,
+      agreedRate: agreedRate,
+      notes: notes || '',
+      bookingSource: normalizedSource,
+      status: 'Pending',
+      isPaid: false,
+    };
+
+    console.log('📝 Creating session with data:', sessionData);
+
+    const session = new Session(sessionData);
     await session.save();
 
+    // ─── Populate and return ──────────────────────────────────────
     const populatedSession = await Session.findById(session._id)
-      .populate('patient', 'name email')
-      .populate('psychologist', 'name email specialization');
+      .populate('patientId', 'name email')
+      .populate('psychiatristId', 'name email specializations');
 
     res.status(201).json({
       success: true,
       message: 'Session booked successfully',
-      session: populatedSession,
+      data: populatedSession,
     });
+
   } catch (error) {
-    console.error('Book session error:', error);
+    console.error('❌ Book session error:', error);
     res.status(500).json({
       success: false,
       message: error.message,
@@ -84,16 +123,15 @@ exports.getMySessions = async (req, res) => {
 
     let query = {};
     if (role === 'patient') {
-      query.patient = userId;
+      query.patientId = userId;
     } else if (role === 'psychiatrist') {
-      query.psychologist = userId;
+      query.psychiatristId = userId;
     }
 
     const sessions = await Session.find(query)
-      .sort({ date: -1, time: -1 })
-      .populate('patient', 'name email')
-      .populate('psychologist', 'name email specialization')
-      .limit(50);
+      .sort({ dateTime: -1 })
+      .populate('patientId', 'name email')
+      .populate('psychiatristId', 'name email specializations');
 
     res.json({
       success: true,
@@ -116,8 +154,8 @@ exports.getSession = async (req, res) => {
     const userId = req.user.id;
 
     const session = await Session.findById(id)
-      .populate('patient', 'name email profileImage')
-      .populate('psychologist', 'name email specializations');
+      .populate('patientId', 'name email profileImage')
+      .populate('psychiatristId', 'name email specializations');
 
     if (!session) {
       return res.status(404).json({
@@ -127,8 +165,8 @@ exports.getSession = async (req, res) => {
     }
 
     if (
-      session.patient._id.toString() !== userId &&
-      session.psychologist._id.toString() !== userId &&
+      session.patientId._id.toString() !== userId &&
+      session.psychiatristId._id.toString() !== userId &&
       req.user.role !== 'admin'
     ) {
       return res.status(403).json({
@@ -139,7 +177,7 @@ exports.getSession = async (req, res) => {
 
     res.json({
       success: true,
-      session,
+      data: session,
     });
   } catch (error) {
     console.error('Get session error:', error);
@@ -164,21 +202,21 @@ exports.cancelSession = async (req, res) => {
       });
     }
 
-    if (session.patient.toString() !== userId && req.user.role !== 'admin') {
+    if (session.patientId.toString() !== userId && req.user.role !== 'admin') {
       return res.status(403).json({
         success: false,
         message: 'Unauthorized to cancel this session',
       });
     }
 
-    if (session.status === 'completed' || session.status === 'cancelled') {
+    if (session.status === 'Completed' || session.status === 'Cancelled') {
       return res.status(400).json({
         success: false,
         message: 'Session cannot be cancelled',
       });
     }
 
-    session.status = 'cancelled';
+    session.status = 'Cancelled';
     await session.save();
 
     res.json({
@@ -198,7 +236,7 @@ exports.cancelSession = async (req, res) => {
 exports.rateSession = async (req, res) => {
   try {
     const { id } = req.params;
-    const { rating, review, feedback } = req.body;
+    const { rating, feedback } = req.body;
     const userId = req.user.id;
 
     const session = await Session.findById(id);
@@ -209,31 +247,31 @@ exports.rateSession = async (req, res) => {
       });
     }
 
-    if (session.patient.toString() !== userId) {
+    if (session.patientId.toString() !== userId) {
       return res.status(403).json({
         success: false,
         message: 'Unauthorized to rate this session',
       });
     }
 
-    if (session.status !== 'completed') {
+    if (session.status !== 'Completed') {
       return res.status(400).json({
         success: false,
         message: 'Session must be completed to rate',
       });
     }
 
-    session.rating = {
-      score: rating || 5,
-      review: review || feedback || '',
-      createdAt: new Date(),
-    };
+    session.patientRating = rating || 5;
+    session.patientFeedback = feedback || '';
     await session.save();
 
     res.json({
       success: true,
       message: 'Session rated successfully',
-      rating: session.rating,
+      data: {
+        rating: session.patientRating,
+        feedback: session.patientFeedback,
+      },
     });
   } catch (error) {
     console.error('Rate session error:', error);
@@ -245,19 +283,22 @@ exports.rateSession = async (req, res) => {
 };
 
 // ─── Search therapists ─────────────────────────────────────────
-// ─── Search therapists ─────────────────────────────────────────
 exports.searchTherapists = async (req, res) => {
   try {
     const { specialization, diagnosis, language, type, available } = req.query;
 
     console.log('🔍 Searching therapists with:', { specialization, diagnosis });
 
-    let query = { isVerified: true };
+    let query = { 
+      status: 'active',
+      isActive: true,
+    };
 
-    // ✅ Use ONLY specializations (array)
     const searchTerm = specialization || diagnosis;
     if (searchTerm) {
-      query.specializations = { $in: [searchTerm] };
+      query.specializations = { 
+        $in: [new RegExp(searchTerm, 'i')]
+      };
     }
 
     if (language) {
@@ -284,6 +325,7 @@ exports.searchTherapists = async (req, res) => {
     });
   }
 };
+
 // ─── Get psychiatrist availability ─────────────────────────────
 exports.getAvailability = async (req, res) => {
   try {
@@ -325,7 +367,7 @@ exports.getAvailability = async (req, res) => {
 
     res.json({
       success: true,
-      availability,
+      data: availability,
     });
   } catch (error) {
     console.error('Get availability error:', error);
@@ -353,7 +395,7 @@ exports.getPsychiatristProfile = async (req, res) => {
 
     res.json({
       success: true,
-      psychiatrist,
+      data: psychiatrist,
     });
   } catch (error) {
     console.error('Get psychiatrist profile error:', error);

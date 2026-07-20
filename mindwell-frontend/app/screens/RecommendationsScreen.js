@@ -1,74 +1,187 @@
-import React, { useCallback, useMemo, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+// app/screens/RecommendationsScreen.js
+import React, { useCallback, useMemo, useState, useEffect } from 'react';
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View, ActivityIndicator } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useLanguage } from '../context/LanguageContext';
 import {
   getPatientClinicalSummary,
   setSummaryConsent,
 } from '../utils/patientSummaryStorage';
-
-const psychiatrists = [
-  {
-    id: 1,
-    name: 'Dr. Ayesha Khan',
-    specialty: 'Anxiety & Depression',
-    tags: ['Anxiety', 'Low mood', 'Sleep difficulties'],
-    experience: '8 years',
-    rating: 4.9,
-    fee: 2500,
-    available: true,
-    reason: 'Strong fit for anxiety, depression, and CBT-based care.',
-  },
-  {
-    id: 2,
-    name: 'Dr. Omar Farooq',
-    specialty: 'Stress & Trauma',
-    tags: ['Stress', 'Trauma support', 'Crisis-informed care'],
-    experience: '12 years',
-    rating: 4.8,
-    fee: 3000,
-    available: true,
-    reason: 'Best for high stress, trauma recovery, and urgent risk monitoring.',
-  },
-  {
-    id: 3,
-    name: 'Dr. Sara Ahmed',
-    specialty: 'Relationship & Family',
-    tags: ['Relationship or family concerns', 'Low mood'],
-    experience: '6 years',
-    rating: 4.7,
-    fee: 2000,
-    available: false,
-    reason: 'Helpful when relationship or family issues are part of the pattern.',
-  },
-  {
-    id: 4,
-    name: 'Dr. Ali Hassan',
-    specialty: 'Youth & Adolescent',
-    tags: ['Anxiety', 'Stress', 'Low mood'],
-    experience: '10 years',
-    rating: 4.9,
-    fee: 2800,
-    available: true,
-    reason: 'Recommended for young adults with mixed anxiety and stress signals.',
-  },
-];
-
-const selfCareRecommendations = [
-  { id: 1, title: '4-7-8 Breathing', subtitle: 'Use when anxiety spikes.', duration: '5 min', category: 'Anxiety' },
-  { id: 2, title: 'Thought Reframing', subtitle: 'Challenge repeated negative thoughts.', duration: '10 min', category: 'Low mood' },
-  { id: 3, title: 'Sleep Wind-down', subtitle: 'Build a calmer bedtime routine.', duration: '8 min', category: 'Sleep difficulties' },
-  { id: 4, title: 'Stress Journal', subtitle: 'Separate triggers from controllable next steps.', duration: '12 min', category: 'Stress' },
-];
+import { getTherapistRecommendations, getResourceRecommendations, searchTherapists } from '../utils/apiService';
 
 export default function RecommendationsScreen({ navigation }) {
   const { t } = useLanguage();
   const [summary, setSummary] = useState(null);
   const [savingConsent, setSavingConsent] = useState(false);
+  const [matchedPsychiatrists, setMatchedPsychiatrists] = useState([]);
+  const [matchedSelfCare, setMatchedSelfCare] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   const loadSummary = useCallback(async () => {
-    setSummary(await getPatientClinicalSummary());
+    setLoading(true);
+    try {
+      // Get patient summary from local storage
+      const patientSummary = await getPatientClinicalSummary();
+      setSummary(patientSummary);
+
+      // Get therapist recommendations from backend
+      if (patientSummary?.themes?.length > 0) {
+        try {
+          const response = await getTherapistRecommendations();
+          if (response.success && response.data) {
+            const therapists = response.data.recommendedTherapists || [];
+            // Format therapists for display
+            const formatted = therapists.map(doc => ({
+              id: doc._id,
+              name: doc.name,
+              specialty: doc.specializations?.[0] || 'General Psychiatry',
+              specializations: doc.specializations || [],
+              tags: doc.specializations || [],
+              experience: doc.experience_years ? `${doc.experience_years} years` : 'Experienced',
+              rating: doc.avg_rating || 4.5,
+              fee: doc.session_rate || 2500,
+              available: doc.isAvailable !== false,
+              reason: getMatchReason(doc, patientSummary),
+              matchPercent: calculateMatchPercent(doc, patientSummary),
+            }));
+            setMatchedPsychiatrists(formatted);
+          }
+        } catch (error) {
+          console.error('Error fetching therapist recommendations:', error);
+          // Fallback to search
+          await loadTherapistsFromSearch(patientSummary);
+        }
+      } else {
+        // No themes, load all therapists
+        await loadAllTherapists();
+      }
+
+      // Get self-care recommendations
+      await loadSelfCareRecommendations(patientSummary);
+
+    } catch (error) {
+      console.error('Error loading recommendations:', error);
+      Alert.alert('Error', 'Could not load recommendations. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  // Fallback: Search for therapists
+  const loadTherapistsFromSearch = async (patientSummary) => {
+    try {
+      const specialties = patientSummary?.recommendedSpecialties || ['General'];
+      const response = await searchTherapists({ 
+        specialization: specialties[0] 
+      });
+      
+      if (response.success && response.data) {
+        const formatted = response.data.map(doc => ({
+          id: doc._id,
+          name: doc.name,
+          specialty: doc.specializations?.[0] || 'General Psychiatry',
+          specializations: doc.specializations || [],
+          tags: doc.specializations || [],
+          experience: doc.experience_years ? `${doc.experience_years} years` : 'Experienced',
+          rating: doc.avg_rating || 4.5,
+          fee: doc.session_rate || 2500,
+          available: doc.isAvailable !== false,
+          reason: getMatchReason(doc, patientSummary),
+          matchPercent: calculateMatchPercent(doc, patientSummary),
+        }));
+        setMatchedPsychiatrists(formatted);
+      }
+    } catch (error) {
+      console.error('Error searching therapists:', error);
+    }
+  };
+
+  // Load all therapists
+  const loadAllTherapists = async () => {
+    try {
+      const response = await searchTherapists({});
+      if (response.success && response.data) {
+        const formatted = response.data.map(doc => ({
+          id: doc._id,
+          name: doc.name,
+          specialty: doc.specializations?.[0] || 'General Psychiatry',
+          specializations: doc.specializations || [],
+          tags: doc.specializations || [],
+          experience: doc.experience_years ? `${doc.experience_years} years` : 'Experienced',
+          rating: doc.avg_rating || 4.5,
+          fee: doc.session_rate || 2500,
+          available: doc.isAvailable !== false,
+          reason: 'Experienced therapist ready for sessions.',
+          matchPercent: 50,
+        }));
+        setMatchedPsychiatrists(formatted);
+      }
+    } catch (error) {
+      console.error('Error loading all therapists:', error);
+    }
+  };
+
+  // Load self-care recommendations
+  // In RecommendationsScreen.js - update this function
+
+const loadSelfCareRecommendations = async (patientSummary) => {
+  try {
+    // Try to get resources from backend
+    const response = await getResourceRecommendations('General');
+    
+    if (response.success && response.data) {
+      const resources = response.data.resources || [];
+      const formatted = resources.map((r, index) => ({
+        id: r.id || index + 1,
+        title: r.title || 'Self-care activity',
+        subtitle: r.description || r.type || 'Practice this technique',
+        duration: r.duration || '10 min',
+        category: response.data.category || 'General',
+      }));
+      setMatchedSelfCare(formatted);
+    } else {
+      // If API fails, use default self-care
+      setMatchedSelfCare(getDefaultSelfCare());
+    }
+  } catch (error) {
+    console.error('Error loading self-care:', error);
+    // Use default self-care on error
+    setMatchedSelfCare(getDefaultSelfCare());
+  }
+};
+
+// Add this helper function
+const getDefaultSelfCare = () => {
+  return [
+    { id: 1, title: '4-7-8 Breathing', subtitle: 'Use when anxiety spikes.', duration: '5 min', category: 'Anxiety' },
+    { id: 2, title: 'Thought Reframing', subtitle: 'Challenge repeated negative thoughts.', duration: '10 min', category: 'Low mood' },
+    { id: 3, title: 'Sleep Wind-down', subtitle: 'Build a calmer bedtime routine.', duration: '8 min', category: 'Sleep' },
+    { id: 4, title: 'Stress Journal', subtitle: 'Separate triggers from controllable next steps.', duration: '12 min', category: 'Stress' },
+  ];
+};
+  // Helper functions
+  const getMatchReason = (doc, summary) => {
+    if (!summary) return 'Recommended based on your profile.';
+    const matching = doc.specializations?.filter(s => 
+      summary.themes?.includes(s) || summary.recommendedSpecialties?.includes(s)
+    );
+    if (matching?.length > 0) {
+      return `Strong match for ${matching.slice(0, 2).join(', ')}.`;
+    }
+    return 'Recommended based on your needs.';
+  };
+
+  const calculateMatchPercent = (doc, summary) => {
+    if (!summary) return 50;
+    let score = 50;
+    const matches = doc.specializations?.filter(s => 
+      summary.themes?.includes(s) || summary.recommendedSpecialties?.includes(s)
+    );
+    if (matches?.length > 0) score += matches.length * 10;
+    if (doc.avg_rating >= 4.5) score += 10;
+    if (doc.isAvailable) score += 5;
+    return Math.min(score, 98);
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -78,32 +191,6 @@ export default function RecommendationsScreen({ navigation }) {
 
   const riskColor = summary?.riskScore >= 7 ? '#FF6B6B' : summary?.riskScore >= 4 ? '#FFC107' : '#1D9E75';
   const riskLabel = summary?.riskLevel ? summary.riskLevel.charAt(0).toUpperCase() + summary.riskLevel.slice(1) : 'Loading';
-
-  const matchedPsychiatrists = useMemo(() => {
-    if (!summary) return [];
-    return psychiatrists
-      .map(doctor => {
-        const themeMatches = doctor.tags.filter(tag =>
-          summary.themes.includes(tag) || summary.recommendedSpecialties.includes(tag)
-        ).length;
-        const specialtyMatch = summary.recommendedSpecialties.includes(doctor.specialty) ? 2 : 0;
-        const urgencyBoost = summary.riskScore >= 7 && doctor.tags.includes('Crisis-informed care') ? 2 : 0;
-        const availabilityBoost = doctor.available ? 1 : 0;
-        const matchScore = themeMatches * 2 + specialtyMatch + urgencyBoost + availabilityBoost;
-
-        return {
-          ...doctor,
-          matchScore,
-          matchPercent: Math.min(98, 62 + matchScore * 7),
-        };
-      })
-      .sort((a, b) => b.matchScore - a.matchScore || b.rating - a.rating);
-  }, [summary]);
-
-  const matchedSelfCare = useMemo(() => {
-    if (!summary?.themes?.length) return selfCareRecommendations.slice(0, 2);
-    return selfCareRecommendations.filter(item => summary.themes.includes(item.category));
-  }, [summary]);
 
   const toggleConsent = async () => {
     if (!summary) return;
@@ -120,7 +207,7 @@ export default function RecommendationsScreen({ navigation }) {
     );
   };
 
-  const bookRecommended = doctor => {
+  const bookRecommended = (doctor) => {
     navigation.navigate('FindTherapist', {
       recommendedDoctorId: doctor.id,
       recommendedSpecialties: summary?.recommendedSpecialties || [],
@@ -128,7 +215,7 @@ export default function RecommendationsScreen({ navigation }) {
     });
   };
 
-  if (!summary) {
+  if (loading) {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
@@ -136,10 +223,23 @@ export default function RecommendationsScreen({ navigation }) {
           <Text style={styles.headerTitle}>{t.recommendations}</Text>
           <View style={styles.headerSpacer} />
         </View>
-        <Text style={styles.loadingText}>Building your recommendations...</Text>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#6C63FF" />
+          <Text style={styles.loadingText}>Loading recommendations...</Text>
+        </View>
       </View>
     );
   }
+
+  // Default self-care if none loaded
+  const defaultSelfCare = [
+    { id: 1, title: '4-7-8 Breathing', subtitle: 'Use when anxiety spikes.', duration: '5 min', category: 'Anxiety' },
+    { id: 2, title: 'Thought Reframing', subtitle: 'Challenge repeated negative thoughts.', duration: '10 min', category: 'Low mood' },
+    { id: 3, title: 'Sleep Wind-down', subtitle: 'Build a calmer bedtime routine.', duration: '8 min', category: 'Sleep' },
+    { id: 4, title: 'Stress Journal', subtitle: 'Separate triggers from controllable next steps.', duration: '12 min', category: 'Stress' },
+  ];
+
+  const displaySelfCare = matchedSelfCare.length > 0 ? matchedSelfCare : defaultSelfCare;
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
@@ -156,49 +256,64 @@ export default function RecommendationsScreen({ navigation }) {
             <Text style={styles.summarySub}>Built from mood scores, mood notes, and AI coach chat signals.</Text>
           </View>
           <View style={[styles.riskBadge, { backgroundColor: `${riskColor}20` }]}>
-            <Text style={[styles.riskScore, { color: riskColor }]}>{summary.riskScore}/10</Text>
+            <Text style={[styles.riskScore, { color: riskColor }]}>{summary?.riskScore || 0}/10</Text>
             <Text style={[styles.riskLabel, { color: riskColor }]}>{riskLabel} risk</Text>
           </View>
         </View>
 
         <View style={styles.summaryPoints}>
-          {summary.summaryPoints.map(point => (
-            <Text key={point} style={styles.summaryPoint}>- {point}</Text>
-          ))}
+          {summary?.summaryPoints?.length > 0 ? (
+            summary.summaryPoints.map((point, index) => (
+              <Text key={index} style={styles.summaryPoint}>- {point}</Text>
+            ))
+          ) : (
+            <>
+              <Text style={styles.summaryPoint}>- No mood logs have been recorded yet.</Text>
+              <Text style={styles.summaryPoint}>- Recent mood scores do not show repeated low mood.</Text>
+              <Text style={styles.summaryPoint}>- No strong clinical theme has been detected yet.</Text>
+              <Text style={styles.summaryPoint}>- No patient chat entries have been shared yet.</Text>
+            </>
+          )}
         </View>
 
         <View style={styles.tagsRow}>
-          {summary.recommendedSpecialties.map(item => (
-            <View key={item} style={styles.tag}>
-              <Text style={styles.tagText}>{item}</Text>
+          {summary?.recommendedSpecialties?.length > 0 ? (
+            summary.recommendedSpecialties.map(item => (
+              <View key={item} style={styles.tag}>
+                <Text style={styles.tagText}>{item}</Text>
+              </View>
+            ))
+          ) : (
+            <View style={styles.tag}>
+              <Text style={styles.tagText}>General mental wellness</Text>
             </View>
-          ))}
+          )}
         </View>
       </View>
 
-      <View style={[styles.consentCard, summary.consentGranted && styles.consentCardOn]}>
+      <View style={[styles.consentCard, summary?.consentGranted && styles.consentCardOn]}>
         <View style={styles.consentTextBlock}>
           <Text style={styles.consentTitle}>
-            {summary.consentGranted ? 'Sharing with psychiatrist' : 'Share summary with consent'}
+            {summary?.consentGranted ? 'Sharing with psychiatrist' : 'Share summary with consent'}
           </Text>
           <Text style={styles.consentSub}>
-            {summary.consentGranted
+            {summary?.consentGranted
               ? 'Your psychiatrist can view this summary, risk score, recent mood trend, and key chat themes.'
               : 'Enable sharing so your psychiatrist can prepare with your mood trend and chat-based concerns.'}
           </Text>
         </View>
         <TouchableOpacity
-          style={[styles.consentButton, summary.consentGranted && styles.consentButtonOn]}
+          style={[styles.consentButton, summary?.consentGranted && styles.consentButtonOn]}
           onPress={toggleConsent}
           disabled={savingConsent}
         >
-          <Text style={[styles.consentButtonText, summary.consentGranted && styles.consentButtonTextOn]}>
-            {summary.consentGranted ? 'Revoke' : 'Allow'}
+          <Text style={[styles.consentButtonText, summary?.consentGranted && styles.consentButtonTextOn]}>
+            {summary?.consentGranted ? 'Revoke' : 'Allow'}
           </Text>
         </TouchableOpacity>
       </View>
 
-      {summary.riskScore >= 7 && (
+      {summary?.riskScore >= 7 && (
         <View style={styles.alertBox}>
           <Text style={styles.alertTitle}>Professional support is recommended</Text>
           <Text style={styles.alertText}>
@@ -209,7 +324,7 @@ export default function RecommendationsScreen({ navigation }) {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Matched psychiatrists</Text>
-        {matchedPsychiatrists.map(doctor => (
+        {matchedPsychiatrists.map((doctor) => (
           <TouchableOpacity key={doctor.id} style={styles.doctorCard} onPress={() => bookRecommended(doctor)}>
             <View style={styles.doctorTop}>
               <View style={styles.doctorAvatar}>
@@ -238,7 +353,7 @@ export default function RecommendationsScreen({ navigation }) {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Relevant self-care while you wait</Text>
-        {matchedSelfCare.map(item => (
+        {displaySelfCare.map(item => (
           <TouchableOpacity
             key={item.id}
             style={styles.selfCareCard}
@@ -263,7 +378,8 @@ const styles = StyleSheet.create({
   back: { fontSize: 28, color: '#fff', fontWeight: '500' },
   headerTitle: { fontSize: 18, fontWeight: '700', color: '#fff' },
   headerSpacer: { width: 30 },
-  loadingText: { color: '#555', textAlign: 'center', marginTop: 40 },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 60 },
+  loadingText: { color: '#777', marginTop: 12, fontSize: 14 },
   summaryCard: { backgroundColor: '#fff', borderRadius: 18, margin: 16, padding: 16, elevation: 3 },
   summaryTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   summaryInfo: { flex: 1, paddingRight: 12 },

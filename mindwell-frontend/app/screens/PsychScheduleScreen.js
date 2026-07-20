@@ -1,19 +1,44 @@
- 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
 import { useLanguage } from '../context/LanguageContext';
+import { getPsychiatristSessions } from '../utils/apiService';
 
 export default function PsychScheduleScreen({ navigation }) {
   const { t } = useLanguage();
   const [status, setStatus] = useState('online');
+  const [schedule, setSchedule] = useState([]);
 
-  const schedule = [
-    { time: '9:00 AM', patient: 'Sarah M.', type: 'Video', status: 'confirmed', date: 'Today' },
-    { time: '11:00 AM', patient: 'Ahmed K.', type: 'Audio', status: 'confirmed', date: 'Today' },
-    { time: '2:00 PM', patient: 'Omar B.', type: 'Text', status: 'confirmed', date: 'Today' },
-    { time: '10:00 AM', patient: 'Fatima R.', type: 'Video', status: 'confirmed', date: 'Tomorrow' },
-    { time: '3:00 PM', patient: 'Zara N.', type: 'Audio', status: 'confirmed', date: 'Tomorrow' },
-  ];
+  useEffect(() => {
+    const loadSchedule = async () => {
+      try {
+        const result = await getPsychiatristSessions();
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const dayAfter = new Date(tomorrow);
+        dayAfter.setDate(dayAfter.getDate() + 1);
+
+        const mapped = result.data.map(s => ({
+          time: new Date(s.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          patient: s.patientId?.name || 'Patient',
+          type: s.sessionType,
+          status: s.status.toLowerCase(),
+          sessionId: s._id,
+          meetingLink: s.meetingLink,
+          date: new Date(s.dateTime) >= today && new Date(s.dateTime) < tomorrow
+            ? 'Today'
+            : new Date(s.dateTime) >= tomorrow && new Date(s.dateTime) < dayAfter
+            ? 'Tomorrow'
+            : 'Upcoming'
+        }));
+        setSchedule(mapped);
+      } catch (error) {
+        console.error('Schedule error:', error);
+      }
+    };
+    loadSchedule();
+  }, []);
 
   const availability = [
     { day: 'Mon', slots: ['9AM', '11AM', '2PM', '4PM'], active: true },
@@ -114,6 +139,7 @@ export default function PsychScheduleScreen({ navigation }) {
     </ScrollView>
   );
 }
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F0EFFF' },
   header: { backgroundColor: '#1D9E75', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, paddingTop: 50 },

@@ -53,7 +53,8 @@ const sendMessage = async (req, res) => {
         const aiResult = await aiService.processAIMessage(
             message,
             patientName,
-            chatHistory
+            chatHistory,
+            chatId || req.user._id.toString()
         );
 
         // ─── Analyze with Python Diagnosis + Sentiment Model ─────────────────
@@ -63,7 +64,7 @@ const sendMessage = async (req, res) => {
         let finalRiskLevel = aiResult.riskLevel;
 
         if (sentimentResult?.needs_help) {
-            const sev = sentimentResult.severity;          // number 1–10
+            const sev = sentimentResult.severity;
             if (sev >= 8) {
                 finalRiskLevel = 'High';
             } else if (sev >= 6 && finalRiskLevel !== 'High') {
@@ -76,42 +77,42 @@ const sendMessage = async (req, res) => {
         // ─── Save to Database ─────────────────────────────────────────────────
         if (chatId) {
             chat.messages.push({ sender: 'patient', message });
-            chat.messages.push({ sender: 'ai',      message: aiResult.aiResponse });
+            chat.messages.push({ sender: 'ai', message: aiResult.aiResponse });
 
-            chat.riskLevel          = finalRiskLevel;
+            chat.riskLevel = finalRiskLevel;
             chat.intent_recognition = aiResult.intent;
-            chat.chat_text          = message;
-            chat.escalatedToHuman   = aiResult.escalatedToHuman;
-            chat.language           = detectedLanguage;
-            chat.usedFAQ            = aiResult.usedFAQ;
+            chat.chat_text = message;
+            chat.escalatedToHuman = aiResult.escalatedToHuman;
+            chat.language = detectedLanguage;
+            chat.usedFAQ = aiResult.usedFAQ;
 
             if (sentimentResult?.needs_help) {
-                chat.diagnosis           = sentimentResult.diagnosis;
+                chat.diagnosis = sentimentResult.diagnosis;
                 chat.diagnosisConfidence = sentimentResult.confidence;
-                chat.severity            = sentimentResult.severity;
-                chat.severityLabel       = sentimentResult.severity_label;
+                chat.severity = sentimentResult.severity;
+                chat.severityLabel = sentimentResult.severity_label;
             }
 
             await chat.save();
 
         } else {
             chat = await Chatbot.create({
-                patientId:          req.user._id,
+                patientId: req.user._id,
                 patientName,
-                chat_text:          message,
+                chat_text: message,
                 intent_recognition: aiResult.intent,
-                greeting:           aiResult.intent === 'greeting' ? aiResult.aiResponse : '',
-                riskLevel:          finalRiskLevel,
-                escalatedToHuman:   aiResult.escalatedToHuman,
-                language:           detectedLanguage,
-                usedFAQ:            aiResult.usedFAQ,
-                diagnosis:          sentimentResult?.needs_help ? sentimentResult.diagnosis       : null,
-                diagnosisConfidence:sentimentResult?.needs_help ? sentimentResult.confidence      : null,
-                severity:           sentimentResult?.needs_help ? sentimentResult.severity        : null,
-                severityLabel:      sentimentResult?.needs_help ? sentimentResult.severity_label  : null,
+                greeting: aiResult.intent === 'greeting' ? aiResult.aiResponse : '',
+                riskLevel: finalRiskLevel,
+                escalatedToHuman: aiResult.escalatedToHuman,
+                language: detectedLanguage,
+                usedFAQ: aiResult.usedFAQ,
+                diagnosis: sentimentResult?.needs_help ? sentimentResult.diagnosis : null,
+                diagnosisConfidence: sentimentResult?.needs_help ? sentimentResult.confidence : null,
+                severity: sentimentResult?.needs_help ? sentimentResult.severity : null,
+                severityLabel: sentimentResult?.needs_help ? sentimentResult.severity_label : null,
                 messages: [
                     { sender: 'patient', message },
-                    { sender: 'ai',      message: aiResult.aiResponse }
+                    { sender: 'ai', message: aiResult.aiResponse }
                 ]
             });
         }
@@ -121,43 +122,41 @@ const sendMessage = async (req, res) => {
             await MoodEntry.create({
                 patientId: req.user._id,
                 moodScore: 1,
-                moodType:  'Anxious',
-                notes:     `Crisis detected: ${message.substring(0, 100)}`,
+                moodType: 'Anxious',
+                notes: `Crisis detected: ${message.substring(0, 100)}`,
                 aiAnalysis: {
-                    sentiment:   'Negative',
-                    riskLevel:   'High',
-                    suggestion:  'Immediate professional consultation is strongly recommended.'
+                    sentiment: 'Negative',
+                    riskLevel: 'High',
+                    suggestion: 'Immediate professional consultation is strongly recommended.'
                 }
             });
         }
 
         // ─── Response ─────────────────────────────────────────────────────────
-        res.status(200).json({
-            success: true,
-            data: {
-                chatId:           chat._id,
-                intent:           aiResult.intent,
-                riskLevel:        finalRiskLevel,
-                escalatedToHuman: aiResult.escalatedToHuman,
-                aiResponse:       aiResult.aiResponse,
-                language:         detectedLanguage,
-                usedFAQ:          aiResult.usedFAQ,
-                diagnosis: sentimentResult?.needs_help
-                    ? {
-                        label:          sentimentResult.diagnosis,
-                        confidence:     sentimentResult.confidence,
-                        severity:       sentimentResult.severity,
-                        severityLabel:  sentimentResult.severity_label,
-                        top3:           sentimentResult.top3,
-                        needsHelp:      true
-                      }
-                    : {
-                        label:     'No issue detected',
-                        needsHelp: false
-                      },
-                messages: chat.messages
-            }
-        });
+        // In ai.controller.js - update the response section
+res.status(200).json({
+    success: true,
+    data: {
+        chatId: chat._id,
+        intent: aiResult.intent,
+        riskLevel: finalRiskLevel,
+        escalatedToHuman: aiResult.escalatedToHuman,
+        aiResponse: aiResult.aiResponse,
+        language: detectedLanguage,
+        usedFAQ: aiResult.usedFAQ,
+        showDiagnosisCard: aiResult.showDiagnosisCard || false,
+        diagnosisCardData: aiResult.diagnosisCardData || null,
+        diagnosis: {
+            label: diagnosis,
+            confidence: confidence,
+            severity: severity,
+            severityLabel: severity_label,
+            top3: top3 || [],
+            needsHelp: diagnosis && diagnosis !== 'No issue detected'
+        },
+        messages: chat.messages
+    }
+});
 
     } catch (error) {
         console.error('AI Chat Error:', error.message);
@@ -178,7 +177,7 @@ const getChatHistory = async (req, res) => {
         res.status(200).json({
             success: true,
             count: chats.length,
-            data:  chats
+            data: chats
         });
 
     } catch (error) {
@@ -216,8 +215,8 @@ const getRiskScore = async (req, res) => {
             patientId: req.user._id
         }).sort({ createdAt: -1 });
 
-        let overallRisk     = 'Low';
-        let reasons         = [];
+        let overallRisk = 'Low';
+        let reasons = [];
         let recommendations = [];
 
         if (latestChat) {
@@ -252,16 +251,16 @@ const getRiskScore = async (req, res) => {
             success: true,
             data: {
                 overallRisk,
-                reasons:          reasons.length > 0 ? reasons : ['No significant risk detected'],
-                recommendation:   recommendations[0],
+                reasons: reasons.length > 0 ? reasons : ['No significant risk detected'],
+                recommendation: recommendations[0],
                 recommendations,
-                latestDiagnosis:  latestChat?.diagnosis     || null,
-                latestSeverity:   latestChat?.severity      || null,
-                latestSevLabel:   latestChat?.severityLabel || null,
-                latestMoodScore:  latestMood?.moodScore     || null,
+                latestDiagnosis: latestChat?.diagnosis || null,
+                latestSeverity: latestChat?.severity || null,
+                latestSevLabel: latestChat?.severityLabel || null,
+                latestMoodScore: latestMood?.moodScore || null,
                 escalatedToHuman: latestChat?.escalatedToHuman || false,
-                lastChatDate:     latestChat?.createdAt     || null,
-                lastMoodDate:     latestMood?.createdAt     || null
+                lastChatDate: latestChat?.createdAt || null,
+                lastMoodDate: latestMood?.createdAt || null
             }
         });
 
@@ -283,9 +282,9 @@ const endUser = async (req, res) => {
         );
 
         res.status(200).json({
-            success:  true,
-            message:  'User session ended successfully',
-            data:     updatedChat
+            success: true,
+            message: 'User session ended successfully',
+            data: updatedChat
         });
 
     } catch (error) {

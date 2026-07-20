@@ -111,66 +111,67 @@ export default function PaymentScreen({ navigation, route }) {
     return Object.keys(nextErrors).length === 0;
   };
 
-  const handlePayment = async () => {
-    if (!validate()) return;
-    if (!therapist || !appointmentDate || !appointmentTime) {
-      Alert.alert('Booking incomplete', 'Please return and select the therapist, date, and time again.');
-      return;
-    }
+// In PaymentScreen.js - update the booking payload
 
-    setLoading(true);
-    console.log('[PaymentScreen] booking request', {
-      therapist: therapist?.name,
-      appointmentDate,
-      appointmentTime,
-      sessionType,
-    });
+const handlePayment = async () => {
+  if (!validate()) return;
+  if (!therapist || !appointmentDate || !appointmentTime) {
+    Alert.alert('Booking incomplete', 'Please return and select the therapist, date, and time again.');
+    return;
+  }
 
-    try {
-      // ── Build the session booking payload ──────────────────
-      const bookingPayload = {
-        psychiatristId: therapist.id,
-        dateTime: buildAppointmentDateTime(),
-        sessionType: sessionType || 'video',
-        agreedRate: therapist.fee || 2500,
-        notes: 'Booked from MindWell app',
-        bookingSource: 'Mobile App',
-      };
+  setLoading(true);
+  console.log('[PaymentScreen] booking request', {
+    therapist: therapist?.name,
+    appointmentDate,
+    appointmentTime,
+    sessionType,
+  });
 
-      console.log('[PaymentScreen] booking payload:', bookingPayload);
+  try {
+    // ── Build the session booking payload ──────────────────
+    const bookingPayload = {
+      psychiatristId: therapist.id,
+      dateTime: buildAppointmentDateTime(),
+      sessionType: sessionType || 'video',
+      agreedRate: therapist.fee || 2500,
+      notes: 'Booked from MindWell app',
+      bookingSource: 'Manual', // Use 'Manual' or 'AI_Recommended'
+    };
 
-      const booking = await bookSessionApi(bookingPayload);
+    console.log('[PaymentScreen] booking payload:', bookingPayload);
 
-      console.log('[PaymentScreen] booking success', booking);
+    const booking = await bookSessionApi(bookingPayload);
 
-      Alert.alert(
-        'Payment Successful! 🎉',
-        `Your session with ${therapist.name} is booked for ${formattedDate} at ${appointmentTime}.\n\nSession Type: ${sessionType}\nAmount: PKR ${therapist.fee || 2500}\n\nYou can view your sessions in the "My Sessions" tab.`,
-        [
-          {
-            text: 'View Sessions',
-            onPress: () =>
-              navigation.replace('SessionLogs', {
-                recentBookingId: booking?.session?.id || booking?.data?._id,
-              }),
-          },
-          {
-            text: 'Back to Home',
-            onPress: () => navigation.replace('PatientDashboard'),
-          },
-        ]
-      );
-    } catch (error) {
-      console.log('[PaymentScreen] booking failed', error.message || error);
-      Alert.alert(
-        'Booking Error',
-        error.message || 'The booking could not be saved. Please try again.'
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
+    console.log('[PaymentScreen] booking success', booking);
 
+    Alert.alert(
+      'Payment Successful! 🎉',
+      `Your session with ${therapist.name} is booked for ${formattedDate} at ${appointmentTime}.\n\nSession Type: ${sessionType}\nAmount: PKR ${therapist.fee || 2500}\n\nYou can view your sessions in the "My Sessions" tab.`,
+      [
+        {
+          text: 'View Sessions',
+          onPress: () =>
+            navigation.replace('SessionLogs', {
+              recentBookingId: booking?.session?.id || booking?.data?._id,
+            }),
+        },
+        {
+          text: 'Back to Home',
+          onPress: () => navigation.replace('PatientDashboard'),
+        },
+      ]
+    );
+  } catch (error) {
+    console.log('[PaymentScreen] booking failed', error.message || error);
+    Alert.alert(
+      'Booking Error',
+      error.message || 'The booking could not be saved. Please try again.'
+    );
+  } finally {
+    setLoading(false);
+  }
+};
   const clearError = (field) => {
     if (errors[field]) {
       setErrors((current) => ({ ...current, [field]: undefined }));

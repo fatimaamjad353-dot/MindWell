@@ -1,3 +1,4 @@
+// src/models/Session.js
 const mongoose = require('mongoose');
 
 const sessionSchema = new mongoose.Schema({
@@ -22,13 +23,7 @@ const sessionSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: [
-      'Pending',
-      'Confirmed',
-      'Completed',
-      'Cancelled',
-      'Rejected'
-    ],
+    enum: ['Pending', 'Confirmed', 'Completed', 'Cancelled', 'Rejected'],
     default: 'Pending'
   },
   sessionType: {

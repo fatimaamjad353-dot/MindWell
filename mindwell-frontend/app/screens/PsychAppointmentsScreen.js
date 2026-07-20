@@ -1,22 +1,53 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-
-const initialRequests = [
-  { id: 1, patient: 'Hina S.', date: 'June 12', time: '10:30 AM', type: 'Video', reason: 'Anxiety follow-up', status: 'pending' },
-  { id: 2, patient: 'Bilal A.', date: 'June 12', time: '1:00 PM', type: 'Audio', reason: 'Sleep difficulties', status: 'pending' },
-  { id: 3, patient: 'Mariam K.', date: 'June 13', time: '4:00 PM', type: 'Video', reason: 'Medication review', status: 'confirmed' },
-];
+import { getPendingRequests, confirmSessionApi, rejectSessionApi } from '../utils/apiService';
 
 export default function PsychAppointmentsScreen({ navigation }) {
-  const [requests, setRequests] = useState(initialRequests);
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
 
-  const updateStatus = (id, status) => {
-    setRequests(current => current.map(item => item.id === id ? { ...item, status } : item));
-    Alert.alert(
-      status === 'confirmed' ? 'Appointment confirmed' : 'Appointment declined',
-      status === 'confirmed' ? 'The patient will receive a confirmation.' : 'The time slot is available again.'
-    );
+  useEffect(() => {
+    loadRequests();
+  }, []);
+
+  const loadRequests = async () => {
+    try {
+      const result = await getPendingRequests();
+      // Map backend data to match UI structure
+      const mapped = result.data.map(session => ({
+        id: session._id,
+        patient: session.patientId?.name || 'Unknown',
+        date: new Date(session.dateTime).toLocaleDateString(),
+        time: new Date(session.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        type: session.sessionType,
+        reason: session.notes || 'Session request',
+        status: session.status.toLowerCase(),
+        riskLevel: session.riskLevel
+      }));
+      setRequests(mapped);
+    } catch (error) {
+      console.error('Appointments error:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateStatus = async (id, status) => {
+    try {
+      if (status === 'confirmed') {
+        await confirmSessionApi(id, '');
+      } else {
+        await rejectSessionApi(id);
+      }
+      await loadRequests(); // Refresh list
+      Alert.alert(
+        status === 'confirmed' ? 'Appointment confirmed' : 'Appointment declined',
+        status === 'confirmed' ? 'The patient will receive a confirmation.' : 'The time slot is available again.'
+      );
+    } catch (error) {
+      Alert.alert('Error', error.message || 'Something went wrong');
+    }
   };
 
   const visibleRequests = requests.filter(item => filter === 'all' || item.status === filter);

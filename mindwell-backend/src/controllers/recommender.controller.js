@@ -1,3 +1,4 @@
+// src/controllers/recommender.controller.js
 const MoodEntry = require('../models/MoodEntry');
 const Chatbot = require('../models/Chatbot');
 const Psychiatrist = require('../models/Psychiatrist');
@@ -11,19 +12,22 @@ const selfHelpResources = {
       title: 'Box Breathing Exercise',
       type: 'Exercise',
       description: 'A breathing technique to calm anxiety',
-      link: 'https://mindwell.com/resources/box-breathing'
+      link: 'https://mindwell.com/resources/box-breathing',
+      duration: '5 min'
     },
     {
       title: 'Managing Anxiety Guide',
       type: 'Article',
       description: 'Evidence based techniques for anxiety',
-      link: 'https://mindwell.com/resources/anxiety-guide'
+      link: 'https://mindwell.com/resources/anxiety-guide',
+      duration: '10 min'
     },
     {
       title: '5-4-3-2-1 Grounding Technique',
       type: 'Exercise',
       description: 'Sensory grounding for panic attacks',
-      link: 'https://mindwell.com/resources/grounding'
+      link: 'https://mindwell.com/resources/grounding',
+      duration: '8 min'
     }
   ],
   Depression: [
@@ -31,19 +35,22 @@ const selfHelpResources = {
       title: 'Behavioral Activation Guide',
       type: 'Article',
       description: 'CBT technique for depression',
-      link: 'https://mindwell.com/resources/behavioral-activation'
+      link: 'https://mindwell.com/resources/behavioral-activation',
+      duration: '12 min'
     },
     {
       title: 'Daily Mood Journal Template',
       type: 'Tool',
       description: 'Track your mood daily',
-      link: 'https://mindwell.com/resources/mood-journal'
+      link: 'https://mindwell.com/resources/mood-journal',
+      duration: '10 min'
     },
     {
       title: 'Positive Activity Scheduling',
       type: 'Exercise',
       description: 'Schedule activities that bring joy',
-      link: 'https://mindwell.com/resources/activity-scheduling'
+      link: 'https://mindwell.com/resources/activity-scheduling',
+      duration: '15 min'
     }
   ],
   Stress: [
@@ -51,39 +58,52 @@ const selfHelpResources = {
       title: 'Progressive Muscle Relaxation',
       type: 'Exercise',
       description: 'Reduce physical tension from stress',
-      link: 'https://mindwell.com/resources/pmr'
+      link: 'https://mindwell.com/resources/pmr',
+      duration: '10 min'
     },
     {
       title: 'Time Management Guide',
       type: 'Article',
       description: 'Manage workload and reduce stress',
-      link: 'https://mindwell.com/resources/time-management'
+      link: 'https://mindwell.com/resources/time-management',
+      duration: '15 min'
     },
     {
       title: 'Mindfulness Meditation',
       type: 'Exercise',
       description: '10 minute mindfulness practice',
-      link: 'https://mindwell.com/resources/mindfulness'
+      link: 'https://mindwell.com/resources/mindfulness',
+      duration: '10 min'
     }
   ],
   General: [
     {
-      title: 'Mental Wellness Guide',
-      type: 'Article',
-      description: 'General mental health tips',
-      link: 'https://mindwell.com/resources/wellness-guide'
+      title: '4-7-8 Breathing Exercise',
+      type: 'Exercise',
+      description: 'Use when anxiety spikes',
+      link: 'https://mindwell.com/resources/box-breathing',
+      duration: '5 min'
     },
     {
-      title: 'Sleep Hygiene Tips',
+      title: 'Thought Reframing Guide',
       type: 'Article',
-      description: 'Improve sleep for better mental health',
-      link: 'https://mindwell.com/resources/sleep'
+      description: 'Challenge repeated negative thoughts',
+      link: 'https://mindwell.com/resources/thought-reframing',
+      duration: '10 min'
     },
     {
-      title: 'Exercise for Mental Health',
-      type: 'Article',
-      description: 'How exercise improves mood',
-      link: 'https://mindwell.com/resources/exercise'
+      title: 'Sleep Wind-down Routine',
+      type: 'Exercise',
+      description: 'Build a calmer bedtime routine',
+      link: 'https://mindwell.com/resources/sleep-routine',
+      duration: '8 min'
+    },
+    {
+      title: 'Stress Journal Template',
+      type: 'Tool',
+      description: 'Separate triggers from controllable next steps',
+      link: 'https://mindwell.com/resources/stress-journal',
+      duration: '12 min'
     }
   ]
 };
@@ -196,32 +216,29 @@ const getTherapistRecommendations = async (req, res) => {
       ];
     }
 
-    // ─── Content Based Filtering ──────────────────
     // Find therapists matching specialization
     const contentBasedTherapists = await Psychiatrist.find({
-      accountStatus: 'Authorized',
+      status: 'active',
       isAvailable: true,
-      specialization: {
-        $regex: neededSpecializations[0],
-        $options: 'i'
+      specializations: {
+        $in: neededSpecializations.map(s => new RegExp(s, 'i'))
       }
     })
-      .select('-password -twoFactorSecret')
+      .select('-password')
       .limit(5);
 
-    // ─── Collaborative Filtering ──────────────────
-    // Find therapists that helped similar patients
+    // Get highly rated therapists from sessions
     const similarPatientSessions = await Session.find({
       status: 'Completed',
       patientRating: { $gte: 4 }
-    }).populate('psychiatristId', 'name specialization rating sessionRate isAvailable accountStatus');
+    }).populate('psychiatristId', 'name specializations avg_rating session_rate isAvailable');
 
-    // Get highly rated therapists
+    // Get unique therapists
     const collaborativeTherapists = similarPatientSessions
       .map(s => s.psychiatristId)
       .filter(t =>
         t &&
-        t.accountStatus === 'Authorized' &&
+        t.status === 'active' &&
         t.isAvailable
       )
       .filter((t, index, self) =>
@@ -231,13 +248,12 @@ const getTherapistRecommendations = async (req, res) => {
       )
       .slice(0, 5);
 
-    // ─── Hybrid Merge ─────────────────────────────
+    // Merge and deduplicate
     const allTherapists = [
       ...contentBasedTherapists,
       ...collaborativeTherapists
     ];
 
-    // Remove duplicates
     const uniqueTherapists = allTherapists.filter(
       (t, index, self) =>
         index === self.findIndex(
@@ -247,7 +263,7 @@ const getTherapistRecommendations = async (req, res) => {
 
     // Sort by rating
     uniqueTherapists.sort(
-      (a, b) => b.rating - a.rating
+      (a, b) => (b.avg_rating || 0) - (a.avg_rating || 0)
     );
 
     // Save to triage summary
@@ -293,45 +309,41 @@ const getTherapistRecommendations = async (req, res) => {
 const getResourceRecommendations = async (req, res) => {
   try {
     const patientId = req.user._id;
+    const { diagnosis } = req.params;
 
-    // Analyze patient data
-    const analysis = await analyzePatientData(patientId);
+    // Analyze patient data for better recommendations
+    let analysis = null;
+    try {
+      analysis = await analyzePatientData(patientId);
+    } catch (e) {
+      console.warn('Could not analyze patient data:', e.message);
+    }
 
     let resources = [];
-    let category = 'General';
+    let category = diagnosis || 'General';
 
-    // Content based resource selection
-    if (
-      analysis.dominantMood === 'Anxious' ||
-      analysis.dominantMood === 'Stressed'
-    ) {
-      category = analysis.dominantMood === 'Anxious'
-        ? 'Anxiety'
-        : 'Stress';
-      resources = [
-        ...selfHelpResources[category],
-        ...selfHelpResources.General
-      ];
-    } else if (
-      analysis.dominantMood === 'Depressed' ||
-      analysis.dominantMood === 'Sad'
-    ) {
-      category = 'Depression';
-      resources = [
-        ...selfHelpResources.Depression,
-        ...selfHelpResources.General
-      ];
+    // Select resources based on diagnosis or mood
+    if (category === 'Anxiety' || 
+        (analysis && (analysis.dominantMood === 'Anxious' || analysis.dominantMood === 'Stressed'))) {
+      resources = selfHelpResources.Anxiety;
+    } else if (category === 'Depression' || 
+               (analysis && (analysis.dominantMood === 'Depressed' || analysis.dominantMood === 'Sad'))) {
+      resources = selfHelpResources.Depression;
+    } else if (category === 'Stress' || 
+               (analysis && analysis.dominantMood === 'Stressed')) {
+      resources = selfHelpResources.Stress;
     } else {
       resources = selfHelpResources.General;
     }
 
     // Add urgent resources if high risk
-    if (analysis.riskScore >= 7) {
+    if (analysis && analysis.riskScore >= 7) {
       resources.unshift({
         title: '🆘 Crisis Support',
         type: 'Emergency',
         description: 'Immediate mental health crisis support',
-        link: 'tel:0317-4288665'
+        link: 'tel:0317-4288665',
+        duration: '24/7'
       });
     }
 
@@ -339,17 +351,22 @@ const getResourceRecommendations = async (req, res) => {
       success: true,
       data: {
         category,
-        dominantMood: analysis.dominantMood,
-        riskScore: analysis.riskScore,
-        resources,
-        totalResources: resources.length
+        resources: resources,
+        totalResources: resources.length,
+        patientRisk: analysis ? analysis.riskScore : null
       }
     });
 
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message
+    console.error('Resource recommendations error:', error);
+    // Return default resources on error
+    res.status(200).json({
+      success: true,
+      data: {
+        category: 'General',
+        resources: selfHelpResources.General,
+        totalResources: selfHelpResources.General.length
+      }
     });
   }
 };
@@ -434,6 +451,7 @@ const getPsychologistPatientSummary = async (req, res) => {
   }
 };
 
+// ─── EXPORT ALL FUNCTIONS ──────────────────────────
 module.exports = {
   getTherapistRecommendations,
   getResourceRecommendations,

@@ -6,60 +6,76 @@ import {
   View, Text, TouchableOpacity, StyleSheet,
   ScrollView, TextInput
 } from 'react-native';
-import { searchTherapists } from '../utils/apiService';
+import { searchTherapists, getAllPsychiatrists } from '../utils/apiService';
 
 export default function FindTherapistScreen({ navigation, route }) {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(null);
   const [sessionType, setSessionType] = useState('video');
   const [therapists, setTherapists] = useState([]);
+  const [allTherapists, setAllTherapists] = useState([]);
   const [loading, setLoading] = useState(false);
   const recommendedDoctorId = route.params?.recommendedDoctorId;
   const recommendedSpecialties = route.params?.recommendedSpecialties || [];
   const patientSummary = route.params?.patientSummary;
 
+  // Load all therapists on mount
   useEffect(() => {
-    const loadTherapists = async () => {
-      setLoading(true);
-      try {
-        const response = await searchTherapists({ specialization: search || undefined });
-        
-        // ─── Format therapists from backend ──────────────────
-        const formattedTherapists = (response?.data || []).map(therapist => ({
-          id: therapist._id,
-          name: therapist.name,
-          // ✅ Use ONLY specializations (not specialization)
-          specializations: therapist.specializations || [],
-          specialty: therapist.specializations?.[0] || therapist.specialization || 'General Psychiatry',
-          experience: therapist.experience_years ? `${therapist.experience_years} years` : 'Experienced',
-          rating: therapist.avg_rating || 4.5,
-          fee: therapist.session_rate || 2500,
-          available: therapist.isAvailable,
-          sessions: therapist.total_patients || 0,
-          hospital: therapist.hospital || '',
-          about: therapist.hospital 
-            ? `${therapist.name} is available at ${therapist.hospital}.` 
-            : 'Experienced therapist ready for sessions.',
-          languages: therapist.languages || ['English'],
-          sessionTypes: therapist.session_types || ['video'],
-          contact: therapist.contact || '',
-          emoji: '👨‍⚕️'
-        }));
-        
-        setTherapists(formattedTherapists);
-      } catch (error) {
-        Alert.alert('Unable to load therapists', error.message || 'Please try again.');
-      } finally {
-        setLoading(false);
-      }
-    };
+    loadAllTherapists();
+  }, []);
 
-    loadTherapists();
-  }, [search]);
+  // Filter therapists when search changes
+  useEffect(() => {
+    if (search.trim()) {
+      const filtered = allTherapists.filter(t => 
+        t.name.toLowerCase().includes(search.toLowerCase()) ||
+        t.specializations?.some(s => s.toLowerCase().includes(search.toLowerCase())) ||
+        t.specialty?.toLowerCase().includes(search.toLowerCase())
+      );
+      setTherapists(filtered);
+    } else {
+      setTherapists(allTherapists);
+    }
+  }, [search, allTherapists]);
 
-  // ─── Calculate match score ──────────────────────────────────
+  const loadAllTherapists = async () => {
+    setLoading(true);
+    try {
+      const response = await searchTherapists({});
+      
+      const formattedTherapists = (response?.data || []).map(therapist => ({
+        id: therapist._id,
+        name: therapist.name,
+        specializations: therapist.specializations || [],
+        specialty: therapist.specializations?.[0] || therapist.specialty || 'General Psychiatry',
+        experience: therapist.experience_years ? `${therapist.experience_years} years` : 'Experienced',
+        rating: therapist.avg_rating || 4.5,
+        fee: therapist.session_rate || 2500,
+        available: therapist.isAvailable !== false,
+        sessions: therapist.total_patients || 0,
+        hospital: therapist.hospital || '',
+        about: therapist.hospital 
+          ? `${therapist.name} is available at ${therapist.hospital}.` 
+          : 'Experienced therapist ready for sessions.',
+        languages: therapist.languages || ['English'],
+        sessionTypes: therapist.session_types || ['video'],
+        contact: therapist.contact || '',
+        emoji: '👨‍⚕️'
+      }));
+      
+      setAllTherapists(formattedTherapists);
+      setTherapists(formattedTherapists);
+      
+      console.log(`Loaded ${formattedTherapists.length} therapists`);
+    } catch (error) {
+      console.error('Error loading therapists:', error);
+      Alert.alert('Unable to load therapists', error.message || 'Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const getMatchScore = therapist => {
-    // Check if any of the therapist's specializations match the recommended ones
     const matchingSpecialties = therapist.specializations?.filter(s => 
       recommendedSpecialties.includes(s)
     ) || [];
@@ -72,17 +88,9 @@ export default function FindTherapistScreen({ navigation, route }) {
     return directMatch + specialtyMatch + themeMatch + (therapist.available ? 1 : 0);
   };
 
-  // ─── Filter and sort therapists ─────────────────────────────
-  const filtered = [...therapists]
-    .filter(t => {
-      const searchLower = search.toLowerCase();
-      const nameMatch = t.name.toLowerCase().includes(searchLower);
-      const specialtyMatch = t.specialties?.some(s => 
-        s.toLowerCase().includes(searchLower)
-      );
-      return nameMatch || specialtyMatch;
-    })
-    .sort((a, b) => getMatchScore(b) - getMatchScore(a) || b.rating - a.rating);
+  const sortedTherapists = [...therapists].sort((a, b) => 
+    getMatchScore(b) - getMatchScore(a) || b.rating - a.rating
+  );
 
   const handleBook = (therapist) => {
     navigation.navigate('Booking', {
@@ -105,7 +113,6 @@ export default function FindTherapistScreen({ navigation, route }) {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.back}>←</Text>
@@ -120,8 +127,6 @@ export default function FindTherapistScreen({ navigation, route }) {
         keyboardDismissMode="on-drag"
         automaticallyAdjustKeyboardInsets
       >
-
-        {/* Search */}
         {patientSummary && (
           <View style={styles.matchSummary}>
             <Text style={styles.matchSummaryTitle}>Recommended from your summary</Text>
@@ -142,7 +147,6 @@ export default function FindTherapistScreen({ navigation, route }) {
           />
         </View>
 
-        {/* Session Type */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Session Type</Text>
           <View style={styles.typeRow}>
@@ -163,21 +167,19 @@ export default function FindTherapistScreen({ navigation, route }) {
           </View>
         </View>
 
-        {/* Therapist List */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Available Therapists ({filtered.length})</Text>
+          <Text style={styles.sectionTitle}>Available Therapists ({sortedTherapists.length})</Text>
           {loading ? (
             <View style={styles.loadingState}>
               <ActivityIndicator size="large" color="#6C63FF" />
               <Text style={styles.loadingText}>Loading therapists…</Text>
             </View>
-          ) : filtered.map((therapist) => (
+          ) : sortedTherapists.map((therapist) => (
             <TouchableOpacity
               key={therapist.id}
               style={styles.card}
               onPress={() => setSelected(selected === therapist.id ? null : therapist.id)}
             >
-              {/* Card Header */}
               <View style={styles.cardHeader}>
                 <View style={styles.avatarBox}>
                   <Text style={styles.avatarEmoji}>{therapist.emoji}</Text>
@@ -213,12 +215,10 @@ export default function FindTherapistScreen({ navigation, route }) {
                 </View>
               </View>
 
-              {/* Expanded Detail */}
               {selected === therapist.id && (
                 <View style={styles.expanded}>
                   <Text style={styles.aboutText}>{therapist.about}</Text>
                   
-                  {/* Show specializations list */}
                   {therapist.specializations?.length > 0 && (
                     <View style={styles.specialtiesContainer}>
                       <Text style={styles.specialtiesTitle}>Specializations:</Text>
@@ -269,14 +269,12 @@ export default function FindTherapistScreen({ navigation, route }) {
             </TouchableOpacity>
           ))}
         </View>
-
         <View style={{ height: 30 }} />
       </ScrollView>
     </View>
   );
 }
 
-// ─── Styles ──────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F0EFFF' },
   header: { backgroundColor: '#6C63FF', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, paddingTop: 50 },

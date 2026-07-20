@@ -77,6 +77,7 @@ export const request = async ({ path, method = 'GET', body, auth = true }) => {
         throw error;
     }
 };
+
 // ─── Auth Functions ──────────────────────────────────────
 
 export const registerPatient = (payload) => request({ 
@@ -104,7 +105,6 @@ export const loginPsychiatrist = (payload) => request({
 });
 
 // ─── OTP Functions ──────────────────────────────────────
-
 
 export const sendOTP = (payload) => request({
     path: '/auth/send-otp',
@@ -228,18 +228,63 @@ export const getMonthlyMoodSummary = () => request({
 
 // ─── Session Functions ──────────────────────────────────
 
+/**
+ * Search for therapists with filters
+ * @param {Object} params - Search parameters
+ * @param {string} params.specialization - Specialization to search for (optional)
+ * @param {string} params.language - Language filter (optional)
+ * @param {string} params.available - 'true' to show only available (optional)
+ * @returns {Promise} - Returns therapists data
+ */
 export const searchTherapists = (params = {}) => {
-  const query = new URLSearchParams(params).toString();
-  return request({ 
-    path: `/sessions/search${query ? `?${query}` : ''}` 
-  });
+  // Clean params - remove empty/undefined values
+  const cleanParams = {};
+  if (params.specialization && params.specialization.trim()) {
+    cleanParams.specialization = params.specialization.trim();
+  }
+  if (params.language) {
+    cleanParams.language = params.language;
+  }
+  if (params.available) {
+    cleanParams.available = params.available;
+  }
+  
+  const query = new URLSearchParams(cleanParams).toString();
+  const url = `/sessions/search${query ? `?${query}` : ''}`;
+  
+  console.log(`[API][GET] ${url}`);
+  return request({ path: url });
 };
 
-export const bookSessionApi = (payload) => request({ 
-  path: '/sessions/book', 
-  method: 'POST', 
-  body: payload 
-});
+/**
+ * Get all active psychiatrists
+ * @returns {Promise} - Returns all active psychiatrists
+ */
+export const getAllPsychiatrists = () => {
+  console.log('[API][GET] /sessions/search (all)');
+  return request({ path: '/sessions/search' });
+};
+// ─── Session Functions ──────────────────────────────────
+
+export const bookSessionApi = (payload) => {
+  // Ensure proper field names and enum values
+  const formattedPayload = {
+    patientId: payload.patientId,
+    psychiatristId: payload.psychiatristId,
+    dateTime: payload.dateTime,
+    sessionType: payload.sessionType.charAt(0).toUpperCase() + payload.sessionType.slice(1), // 'video' -> 'Video'
+    agreedRate: payload.agreedRate,
+    notes: payload.notes || '',
+    bookingSource: payload.bookingSource === 'AI_Recommended' ? 'AI_Recommended' : 'Manual',
+    status: 'Pending' // Default status
+  };
+  
+  return request({ 
+    path: '/sessions/book', 
+    method: 'POST', 
+    body: formattedPayload 
+  });
+};
 
 export const getMySessionsApi = () => request({ 
   path: '/sessions/my' 
@@ -262,4 +307,206 @@ export const sendChatMessage = (payload) => request({
   path: '/ai/chat', 
   method: 'POST', 
   body: payload 
+});
+
+export const getChatHistory = () => request({ 
+  path: '/ai/history' 
+});
+
+export const getSingleChat = (chatId) => request({ 
+  path: `/ai/history/${chatId}` 
+});
+
+export const getRiskScore = () => request({ 
+  path: '/ai/risk' 
+});
+
+export const endUserSession = (userId) => request({ 
+  path: `/ai/end/${userId}`, 
+  method: 'DELETE' 
+});
+
+// ─── Psychiatrist Functions ──────────────────────────────
+
+export const getPsychiatristDashboard = () => request({
+  path: '/psychiatrist/dashboard'
+});
+
+export const getPsychiatristSessions = (status) => request({
+  path: `/psychiatrist/sessions${status ? `?status=${status}` : ''}`
+});
+
+export const getPendingRequests = () => request({
+  path: '/psychiatrist/sessions/pending'
+});
+
+export const confirmSessionApi = (sessionId, meetingLink) => request({
+  path: `/psychiatrist/sessions/${sessionId}/confirm`,
+  method: 'PATCH',
+  body: { meetingLink }
+});
+
+export const rejectSessionApi = (sessionId) => request({
+  path: `/psychiatrist/sessions/${sessionId}/reject`,
+  method: 'PATCH'
+});
+
+export const completeSessionApi = (sessionId) => request({
+  path: `/psychiatrist/sessions/${sessionId}/complete`,
+  method: 'PATCH'
+});
+
+export const getPsychiatristPatients = () => request({
+  path: '/psychiatrist/patients'
+});
+
+export const getPsychiatristEarnings = () => request({
+  path: '/psychiatrist/earnings'
+});
+
+export const getPsychiatristFeedback = () => request({
+  path: '/psychiatrist/feedback'
+});
+
+// ─── Admin Functions ──────────────────────────────────────
+
+export const adminLogin = (payload) => request({
+  path: '/admin/login',
+  method: 'POST',
+  body: payload,
+  auth: false
+});
+
+export const getPendingPsychiatrists = () => request({
+  path: '/admin/psychiatrists/pending'
+});
+
+export const verifyPsychiatrist = (id, payload) => request({
+  path: `/admin/psychiatrists/verify/${id}`,
+  method: 'PUT',
+  body: payload
+});
+
+export const suspendPsychiatrist = (id) => request({
+  path: `/admin/psychiatrists/suspend/${id}`,
+  method: 'PUT'
+});
+
+export const getAllPatients = () => request({
+  path: '/admin/patients'
+});
+
+export const suspendPatient = (id) => request({
+  path: `/admin/patients/suspend/${id}`,
+  method: 'PUT'
+});
+
+export const getAdminDashboardStats = () => request({
+  path: '/admin/dashboard'
+});
+
+export const getAllSessions = () => request({
+  path: '/admin/sessions'
+});
+
+export const getAllPayments = () => request({
+  path: '/admin/payments'
+});
+
+// ─── Payment Functions ──────────────────────────────────
+
+export const createPaymentIntent = (payload) => request({
+  path: '/payment/create-intent',
+  method: 'POST',
+  body: payload
+});
+
+export const confirmPayment = (payload) => request({
+  path: '/payment/confirm',
+  method: 'POST',
+  body: payload
+});
+
+export const getMyPayments = () => request({
+  path: '/payment/my-payments'
+});
+
+export const getPaymentDetails = (id) => request({
+  path: `/payment/${id}`
+});
+
+export const refundPayment = (id) => request({
+  path: `/payment/refund/${id}`,
+  method: 'POST'
+});
+
+// ─── Recommender Functions ─────────────────────────────
+
+export const getTherapistRecommendations = () => request({
+  path: '/recommender/recommend',
+  method: 'POST'
+});
+
+// In apiService.js
+
+export const getResourceRecommendations = (diagnosis) => {
+  return request({
+    path: `/recommender/resources/${diagnosis || 'General'}`,
+    method: 'GET',
+    auth: true
+  });
+};
+
+export const getPatientTriageSummary = () => request({
+  path: '/recommender/triage'
+});
+
+export const getPsychologistPatientSummary = (patientId) => request({
+  path: `/recommender/psychologist-summary/${patientId}`
+});
+
+// ─── Profile Functions ──────────────────────────────────
+
+export const updateProfile = (payload) => request({
+  path: '/profile',
+  method: 'PUT',
+  body: payload
+});
+
+export const getProfile = () => request({
+  path: '/profile'
+});
+
+export const uploadProfileImage = (formData) => {
+  // For multipart/form-data uploads
+  return fetch(`${API_BASE_URL}/profile/image`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${AsyncStorage.getItem(AUTH_TOKEN_KEY)}`,
+    },
+    body: formData,
+  }).then(response => response.json());
+};
+
+// ─── Booking Functions ──────────────────────────────────
+
+export const getAvailability = (psychiatristId, days = 7) => request({
+  path: `/sessions/psychiatrist/availability/${psychiatristId}?days=${days}`
+});
+
+export const getPsychiatristProfile = (id) => request({
+  path: `/sessions/psychiatrist/${id}`
+});
+// ─── Twilio Functions ───────────────────────────────────
+
+export const fetchTwilioVideoToken = (payload) => request({
+  path: '/twilio/video-token',
+  method: 'POST',
+  body: payload
+});
+
+export const fetchTwilioConversationToken = (payload) => request({
+  path: '/twilio/conversations-token',
+  method: 'POST',
+  body: payload
 });

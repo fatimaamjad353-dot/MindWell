@@ -5,10 +5,10 @@ const { protect } = require('../middleware/auth.middleware');
 
 // Import the correct functions from your controller
 const {
-    getTherapistRecommendations,    // ← Correct name
-    getResourceRecommendations,      // ← Correct name
-    getPatientSummary,              // ← Correct name
-    getPsychologistPatientSummary   // ← Correct name
+    getTherapistRecommendations,
+    getResourceRecommendations,
+    getPatientSummary,
+    getPsychologistPatientSummary
 } = require('../controllers/recommender.controller');
 
 // All routes are protected (require authentication)

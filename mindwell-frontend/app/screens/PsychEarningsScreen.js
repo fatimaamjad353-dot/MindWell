@@ -1,21 +1,35 @@
- 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { useLanguage } from '../context/LanguageContext';
+import { getPsychiatristEarnings } from '../utils/apiService';
 
 export default function PsychEarningsScreen({ navigation }) {
   const { t } = useLanguage();
   const [period, setPeriod] = useState('month');
+  const [earningsData, setEarningsData] = useState(null);
+  const [transactions, setTransactions] = useState([]);
 
-  const transactions = [
-    { patient: 'Sarah M.', date: 'May 5', type: 'Video Session', amount: 2500, status: 'paid' },
-    { patient: 'Ahmed K.', date: 'Apr 28', type: 'Audio Session', amount: 2000, status: 'paid' },
-    { patient: 'Fatima R.', date: 'May 3', type: 'Video Session', amount: 2500, status: 'paid' },
-    { patient: 'Omar B.', date: 'Apr 20', type: 'Video Session', amount: 2500, status: 'pending' },
-    { patient: 'Zara N.', date: 'May 7', type: 'Audio Session', amount: 2000, status: 'paid' },
-  ];
+  useEffect(() => {
+    const loadEarnings = async () => {
+      try {
+        const result = await getPsychiatristEarnings();
+        setEarningsData(result.data);
+        const mapped = result.data.sessions.map(s => ({
+          patient: s.patientId?.name || 'Patient',
+          date: new Date(s.dateTime || s.createdAt).toLocaleDateString(),
+          type: `${s.sessionType} Session`,
+          amount: s.agreedRate,
+          status: s.isPaid ? 'paid' : 'pending'
+        }));
+        setTransactions(mapped);
+      } catch (error) {
+        console.error('Earnings error:', error);
+      }
+    };
+    loadEarnings();
+  }, []);
 
-  const total = transactions.reduce((sum, t) => t.status === 'paid' ? sum + t.amount : sum, 0);
+  const total = earningsData?.totalEarnings || 0;
   const pending = transactions.reduce((sum, t) => t.status === 'pending' ? sum + t.amount : sum, 0);
 
   return (
@@ -48,7 +62,7 @@ export default function PsychEarningsScreen({ navigation }) {
             <Text style={styles.statLabel}>Pending</Text>
           </View>
           <View style={styles.stat}>
-            <Text style={styles.statVal}>PKR {Math.round(total / transactions.filter(t => t.status === 'paid').length).toLocaleString()}</Text>
+            <Text style={styles.statVal}>PKR {Math.round(total / (transactions.filter(t => t.status === 'paid').length || 1)).toLocaleString()}</Text>
             <Text style={styles.statLabel}>Per Session</Text>
           </View>
         </View>
@@ -77,6 +91,7 @@ export default function PsychEarningsScreen({ navigation }) {
     </ScrollView>
   );
 }
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F0EFFF' },
   header: { backgroundColor: '#1D9E75', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, paddingTop: 50 },

@@ -10,32 +10,123 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Animated,
+  Linking,
 } from 'react-native';
 import { sendChatMessage } from '../utils/apiService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const AUTH_TOKEN_KEY = 'mindwell_auth_token';
 
+// ─── Diagnosis Card Component ─────────────────────────────────
+const DiagnosisCard = ({ data, onBookSession, onDismiss }) => {
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 400,
+      useNativeDriver: true,
+    }).start();
+  }, []);
+
+  const severityLevel = data.severity || 'Moderate';
+  const severityColor =
+    severityLevel === 'Severe' ? '#FF6B6B' :
+    severityLevel === 'Moderate' ? '#FFC107' : '#1D9E75';
+
+  const severityBg =
+    severityLevel === 'Severe' ? '#FFEBEE' :
+    severityLevel === 'Moderate' ? '#FFF9C4' : '#E8F5E9';
+
+  return (
+    <Animated.View style={[styles.diagnosisCard, { opacity: fadeAnim }]}>
+      <View style={styles.diagnosisHeader}>
+        <Text style={styles.diagnosisIcon}>🧠</Text>
+        <View style={styles.diagnosisHeaderText}>
+          <Text style={styles.diagnosisTitle}>Pattern Detected</Text>
+          <Text style={styles.diagnosisSubtitle}>Based on your message</Text>
+        </View>
+        <TouchableOpacity onPress={onDismiss} style={styles.dismissBtn}>
+          <Text style={styles.dismissText}>✕</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.diagnosisBody}>
+        <Text style={styles.diagnosisLabel}>{data.label || 'Analysis'}</Text>
+        <Text style={styles.diagnosisConfidence}>{data.confidence}% confidence</Text>
+      </View>
+
+      <View style={[styles.severityBadge, { backgroundColor: severityBg }]}>
+        <Text style={[styles.severityText, { color: severityColor }]}>
+          {severityLevel} Severity
+        </Text>
+      </View>
+
+      {data.top3 && data.top3.length > 0 && (
+        <View style={styles.top3Row}>
+          {data.top3.slice(0, 3).map((item, i) => (
+            <View key={i} style={styles.top3Item}>
+              <Text style={styles.top3Name}>
+                {typeof item === 'string' ? item : item.label || item.name || 'Analysis'}
+              </Text>
+              <Text style={styles.top3Conf}>
+                {typeof item === 'string' ? '—' : 
+                  (item.confidence?.toFixed ? item.confidence.toFixed(0) : '—')}%
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      <View style={styles.diagnosisActions}>
+        <TouchableOpacity style={styles.learnMoreBtn} onPress={onDismiss}>
+          <Text style={styles.learnMoreText}>Got it</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.bookBtn} onPress={onBookSession}>
+          <Text style={styles.bookText}>Book a Session</Text>
+        </TouchableOpacity>
+      </View>
+    </Animated.View>
+  );
+};
+
+// ─── Crisis Banner Component ──────────────────────────────────
+const CrisisBanner = ({ onCall }) => (
+  <View style={styles.crisisBanner}>
+    <Text style={styles.crisisIcon}>🆘</Text>
+    <View style={styles.crisisText}>
+      <Text style={styles.crisisTitle}>You're not alone</Text>
+      <Text style={styles.crisisSub}>Professional help is available right now</Text>
+    </View>
+    <TouchableOpacity style={styles.crisisBtn} onPress={onCall}>
+      <Text style={styles.crisisBtnText}>Call Now</Text>
+    </TouchableOpacity>
+  </View>
+);
+
 export default function ChatScreen({ navigation }) {
   const [messages, setMessages] = useState([
     {
       id: 1,
-      text: "Hello! I'm your AI wellness coach 🧠 I'm here to support you. How are you feeling today?",
+      text: "Hi there 👋 I'm MindWell, your personal wellness companion. I'm here to listen and support you. How are you feeling today?",
       sender: 'ai',
       time: 'Just now',
     },
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const scrollRef = useRef();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [chatId, setChatId] = useState(null);
+  const [diagnosisCard, setDiagnosisCard] = useState(null);
+  const [showCrisis, setShowCrisis] = useState(false);
+  const [shownDiagnoses, setShownDiagnoses] = useState(new Set());
+  const scrollRef = useRef();
 
-  // ─── Check if user is logged in ──────────────────────────
   useEffect(() => {
     const checkLogin = async () => {
       const token = await AsyncStorage.getItem(AUTH_TOKEN_KEY);
       setIsLoggedIn(!!token);
-      console.log('🔐 [ChatScreen] User logged in:', !!token);
     };
     checkLogin();
   }, []);
@@ -47,99 +138,98 @@ export default function ChatScreen({ navigation }) {
     "I need motivation 💪",
   ];
 
-  // ─── SEND MESSAGE FUNCTION ──────────────────────────────────
+  // ─── SEND MESSAGE ─────────────────────────────────────────────
   const sendMessage = async (text) => {
     const messageText = text || input.trim();
-    if (!messageText) {
-      console.log('⚠️ [ChatScreen] Empty message, ignoring');
-      return;
-    }
+    if (!messageText || loading) return;
 
-    console.log('🔵 [ChatScreen] sendMessage called with:', messageText);
-    console.log('🔵 [ChatScreen] User logged in:', isLoggedIn);
-
-    // ─── Add user message ──────────────────────────────────
     const userMsg = {
       id: Date.now(),
       text: messageText,
       sender: 'user',
-      time: new Date().toLocaleTimeString(),
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
     setMessages((prev) => [...prev, userMsg]);
     setInput('');
     setLoading(true);
+    setDiagnosisCard(null);
 
     try {
-      console.log('📤 [ChatScreen] Sending to API:', messageText);
+      const response = await sendChatMessage({
+        message: messageText,
+        chatId: chatId || undefined
+      });
 
-      // ─── Call backend API ──────────────────────────────────
-      const response = await sendChatMessage({ message: messageText });
+      const data = response?.data || response;
 
-      console.log('📥 [ChatScreen] Full response from backend:', JSON.stringify(response, null, 2));
-
-      // ─── ✅ FIX: Extract AI response from the "data" object ──
-      let aiText = "I'm here to listen. Could you tell me more about what's on your mind? 💙";
-
-      if (response) {
-        // The response is inside "data" object
-        const responseData = response.data || response;
-
-        // Check if aiResponse exists in the data
-        if (responseData.aiResponse) {
-          aiText = responseData.aiResponse;
-          console.log('✅ [ChatScreen] Using aiResponse from data');
-        }
-        // If backend has diagnosis but no aiResponse
-        else if (responseData.diagnosis && responseData.diagnosis.label) {
-          aiText = `I notice patterns consistent with ${responseData.diagnosis.label} (${responseData.confidence?.toFixed(1) || '95'}% confidence). Would you like to learn more or speak with a professional?`;
-        }
-        // Check for crisis
-        else if (responseData.escalatedToHuman || responseData.riskLevel === 'HIGH') {
-          aiText = "🚨 I've detected you might be in a crisis. Please stay with me. I'm alerting our support team.\n\n📞 Crisis Helpline: 0317-4288665";
-        }
-        // Check if there's a message in the response
-        else if (responseData.message) {
-          aiText = responseData.message;
-        }
+      if (data.chatId && !chatId) {
+        setChatId(data.chatId);
       }
 
-      console.log('🤖 [ChatScreen] Final AI Response:', aiText.substring(0, 200) + '...');
+      const aiText = data.aiResponse ||
+        "I'm here for you. Could you tell me more about what's on your mind? 💙";
 
-      // ─── Add AI message ───────────────────────────────────
       const aiMsg = {
         id: Date.now() + 1,
         text: aiText,
         sender: 'ai',
-        time: new Date().toLocaleTimeString(),
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        riskLevel: data.riskLevel,
       };
       setMessages((prev) => [...prev, aiMsg]);
 
-    } catch (error) {
-      console.error('❌ [ChatScreen] Chat error:', error.message);
-      console.error('❌ [ChatScreen] Full error:', error);
-
-      let errorMessage = "I'm having trouble connecting. Please try again. 🔌";
-
-      if (error.message?.includes('Network') || error.message?.includes('fetch')) {
-        errorMessage = "I can't reach my brain right now. Please check your internet connection. 🔌";
-      } else if (error.message?.includes('401') || error.message?.includes('403')) {
-        errorMessage = "Your session has expired. Please log in again. 🔐";
+      if (data.escalatedToHuman || data.riskLevel === 'High') {
+        setShowCrisis(true);
       }
 
-      const errorMsg = {
+      // ─── Show diagnosis card ─────────────────────────────────
+      if (data.showDiagnosisCard && data.diagnosisCardData) {
+        const cardData = data.diagnosisCardData;
+        setDiagnosisCard({
+          label: cardData.label || 'Pattern Detected',
+          confidence: cardData.confidence || '70',
+          severity: cardData.severity || 'Moderate',
+          top3: cardData.top3 || [],
+        });
+      } else if (data.diagnosis?.needsHelp && data.diagnosis?.label !== 'No issue detected') {
+        const diag = data.diagnosis;
+        if (diag.confidence > 70 && !shownDiagnoses.has(diag.label)) {
+          setDiagnosisCard({
+            label: diag.label,
+            confidence: diag.confidence?.toFixed(1) || '70',
+            severity: diag.severityLabel || 'Moderate',
+            top3: diag.top3 || [],
+          });
+          setShownDiagnoses(prev => new Set([...prev, diag.label]));
+        }
+      }
+
+    } catch (error) {
+      console.error('❌ Chat error:', error.message);
+      let errorMessage = "I'm having a moment of trouble. Please try again 💙";
+      if (error.message?.includes('401') || error.message?.includes('403')) {
+        errorMessage = "Your session has expired. Please log in again 🔐";
+      } else if (error.message?.includes('Network')) {
+        errorMessage = "I can't reach my servers right now. Please check your connection 🔌";
+      }
+
+      setMessages((prev) => [...prev, {
         id: Date.now() + 1,
         text: errorMessage,
         sender: 'ai',
-        time: new Date().toLocaleTimeString(),
-      };
-      setMessages((prev) => [...prev, errorMsg]);
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      }]);
 
     } finally {
       setLoading(false);
       setTimeout(() => {
         scrollRef.current?.scrollToEnd({ animated: true });
-      }, 100);
+      }, 150);
     }
+  };
+
+  const handleCall = () => {
+    Linking.openURL('tel:03174288665');
   };
 
   return (
@@ -147,7 +237,7 @@ export default function ChatScreen({ navigation }) {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      {/* Header */}
+      {/* ─── Header ─────────────────────────────────────────── */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.back}>←</Text>
@@ -161,12 +251,18 @@ export default function ChatScreen({ navigation }) {
         <View style={{ width: 30 }} />
       </View>
 
-      {/* Messages */}
+      {/* ─── Crisis Banner ───────────────────────────────────── */}
+      {showCrisis && (
+        <CrisisBanner onCall={handleCall} />
+      )}
+
+      {/* ─── Messages ────────────────────────────────────────── */}
       <ScrollView
         ref={scrollRef}
         style={styles.messages}
-        contentContainerStyle={{ padding: 16 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: 8 }}
         onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
+        keyboardShouldPersistTaps="handled"
       >
         {messages.map((msg) => (
           <View
@@ -177,41 +273,63 @@ export default function ChatScreen({ navigation }) {
             ]}
           >
             {msg.sender === 'ai' && <Text style={styles.aiAvatar}>🤖</Text>}
-            <View
-              style={[
-                styles.bubbleContent,
-                msg.sender === 'user' ? styles.userContent : styles.aiContent,
-              ]}
-            >
-              <Text
+            <View style={styles.bubbleWrapper}>
+              <View
                 style={[
-                  styles.messageText,
-                  msg.sender === 'user' ? styles.userText : styles.aiText,
+                  styles.bubbleContent,
+                  msg.sender === 'user' ? styles.userContent : styles.aiContent,
                 ]}
               >
-                {msg.text}
+                <Text
+                  style={[
+                    styles.messageText,
+                    msg.sender === 'user' ? styles.userText : styles.aiText,
+                  ]}
+                >
+                  {msg.text}
+                </Text>
+              </View>
+              <Text style={[
+                styles.timeText,
+                msg.sender === 'user' ? styles.timeRight : styles.timeLeft
+              ]}>
+                {msg.time}
               </Text>
             </View>
           </View>
         ))}
 
+        {/* ─── Typing Indicator ──────────────────────────────── */}
         {loading && (
           <View style={styles.aiBubble}>
             <Text style={styles.aiAvatar}>🤖</Text>
             <View style={styles.typingBubble}>
               <ActivityIndicator size="small" color="#6C63FF" />
-              <Text style={styles.typingText}>Thinking...</Text>
+              <Text style={styles.typingText}>MindWell is thinking...</Text>
             </View>
           </View>
         )}
+
+        {/* ─── Diagnosis Card ────────────────────────────────── */}
+        {diagnosisCard && (
+          <DiagnosisCard
+            data={diagnosisCard}
+            onDismiss={() => setDiagnosisCard(null)}
+            onBookSession={() => {
+              setDiagnosisCard(null);
+              navigation.navigate('FindTherapist');
+            }}
+          />
+        )}
       </ScrollView>
 
-      {/* Quick Replies */}
+      {/* ─── Quick Replies ───────────────────────────────────── */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         style={styles.quickReplies}
         contentContainerStyle={{ paddingHorizontal: 12 }}
+        keyboardShouldPersistTaps="handled"
       >
         {quickReplies.map((reply, index) => (
           <TouchableOpacity
@@ -225,7 +343,7 @@ export default function ChatScreen({ navigation }) {
         ))}
       </ScrollView>
 
-      {/* Input Box */}
+      {/* ─── Input Box ───────────────────────────────────────── */}
       <View style={styles.inputBox}>
         <TextInput
           style={styles.input}
@@ -235,11 +353,12 @@ export default function ChatScreen({ navigation }) {
           onChangeText={setInput}
           multiline
           editable={!loading}
+          onSubmitEditing={() => sendMessage()}
         />
         <TouchableOpacity
-          style={[styles.sendBtn, loading && styles.sendBtnDisabled]}
+          style={[styles.sendBtn, (!input.trim() || loading) && styles.sendBtnDisabled]}
           onPress={() => sendMessage()}
-          disabled={loading}
+          disabled={!input.trim() || loading}
         >
           <Text style={styles.sendText}>➤</Text>
         </TouchableOpacity>
@@ -267,18 +386,56 @@ const styles = StyleSheet.create({
   online: { color: '#90EE90' },
   offline: { color: '#FF6B6B' },
 
+  // Crisis Banner
+  crisisBanner: {
+    backgroundColor: '#FFEBEE',
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#FFCDD2',
+  },
+  crisisIcon: { fontSize: 24, marginRight: 10 },
+  crisisText: { flex: 1 },
+  crisisTitle: { fontSize: 14, fontWeight: '700', color: '#C62828' },
+  crisisSub: { fontSize: 11, color: '#E53935', marginTop: 2 },
+  crisisBtn: {
+    backgroundColor: '#FF6B6B',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  crisisBtnText: { color: '#fff', fontWeight: '700', fontSize: 12 },
+
   // Messages
   messages: { flex: 1 },
-  messageBubble: { flexDirection: 'row', marginBottom: 12, alignItems: 'flex-end' },
+  messageBubble: {
+    flexDirection: 'row',
+    marginBottom: 12,
+    alignItems: 'flex-end',
+  },
   userBubble: { justifyContent: 'flex-end' },
   aiBubble: { justifyContent: 'flex-start' },
-  aiAvatar: { fontSize: 24, marginRight: 8 },
-  bubbleContent: { maxWidth: '75%', borderRadius: 16, padding: 12 },
-  userContent: { backgroundColor: '#6C63FF', borderBottomRightRadius: 4 },
-  aiContent: { backgroundColor: '#fff', borderBottomLeftRadius: 4, elevation: 2 },
+  aiAvatar: { fontSize: 24, marginRight: 8, marginBottom: 16 },
+  bubbleWrapper: { maxWidth: '75%' },
+  bubbleContent: { borderRadius: 16, padding: 12 },
+  userContent: {
+    backgroundColor: '#6C63FF',
+    borderBottomRightRadius: 4,
+  },
+  aiContent: {
+    backgroundColor: '#fff',
+    borderBottomLeftRadius: 4,
+    elevation: 2,
+  },
   messageText: { fontSize: 15, lineHeight: 22 },
   userText: { color: '#fff' },
   aiText: { color: '#333' },
+  timeText: { fontSize: 10, color: '#aaa', marginTop: 4 },
+  timeRight: { textAlign: 'right' },
+  timeLeft: { textAlign: 'left' },
+
+  // Typing
   typingBubble: {
     backgroundColor: '#fff',
     borderRadius: 16,
@@ -288,6 +445,77 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   typingText: { marginLeft: 8, color: '#888', fontSize: 14 },
+
+  // Diagnosis Card
+  diagnosisCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    marginTop: 8,
+    marginBottom: 4,
+    elevation: 4,
+    borderLeftWidth: 4,
+    borderLeftColor: '#6C63FF',
+  },
+  diagnosisHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  diagnosisIcon: { fontSize: 24, marginRight: 10 },
+  diagnosisHeaderText: { flex: 1 },
+  diagnosisTitle: { fontSize: 15, fontWeight: '700', color: '#1a1a2e' },
+  diagnosisSubtitle: { fontSize: 11, color: '#888', marginTop: 2 },
+  dismissBtn: { padding: 4 },
+  dismissText: { color: '#aaa', fontSize: 16 },
+  diagnosisBody: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  diagnosisLabel: { fontSize: 18, fontWeight: '800', color: '#6C63FF' },
+  diagnosisConfidence: { fontSize: 13, color: '#888' },
+  severityBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 20,
+    marginBottom: 12,
+  },
+  severityText: { fontSize: 12, fontWeight: '700' },
+  top3Row: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+  },
+  top3Item: {
+    flex: 1,
+    backgroundColor: '#F0EFFF',
+    borderRadius: 10,
+    padding: 8,
+    alignItems: 'center',
+  },
+  top3Name: { fontSize: 10, color: '#444', fontWeight: '600', textAlign: 'center' },
+  top3Conf: { fontSize: 12, color: '#6C63FF', fontWeight: '700', marginTop: 2 },
+  diagnosisActions: { flexDirection: 'row', gap: 10 },
+  learnMoreBtn: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderColor: '#6C63FF',
+    borderRadius: 10,
+    padding: 10,
+    alignItems: 'center',
+  },
+  learnMoreText: { color: '#6C63FF', fontWeight: '600', fontSize: 13 },
+  bookBtn: {
+    flex: 1,
+    backgroundColor: '#6C63FF',
+    borderRadius: 10,
+    padding: 10,
+    alignItems: 'center',
+  },
+  bookText: { color: '#fff', fontWeight: '600', fontSize: 13 },
 
   // Quick replies
   quickReplies: { maxHeight: 50, marginBottom: 8 },
@@ -323,6 +551,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginLeft: 8,
   },
-  sendBtnDisabled: { opacity: 0.5 },
+  sendBtnDisabled: { opacity: 0.4 },
   sendText: { color: '#fff', fontSize: 16 },
 });
