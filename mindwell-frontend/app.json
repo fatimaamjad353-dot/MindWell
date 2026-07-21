@@ -1,42 +1,33 @@
 {
   "expo": {
-    "name": "mindwell-frontend",
+    "name": "MindWell",
     "slug": "mindwell-frontend",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
-    "plugins": [
-      [
-        "expo-image-picker",
-        {
-          "photosPermission": "MindWell uses your photo library so you can choose a profile picture.",
-          "cameraPermission": "MindWell uses your camera so you can take a profile picture.",
-          "microphonePermission": false
-        }
-      ],
-      "expo-notifications"
-    ],
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#6C63FF"
     },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mindwell.app"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true,
-      "softwareKeyboardLayoutMode": "resize",
-      "package": "com.anonymous.mindwellfrontend"
+      "package": "com.mindwell.app"
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "scheme": "mindwell"
   }
 }

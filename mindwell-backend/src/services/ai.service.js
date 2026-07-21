@@ -11,16 +11,20 @@ let geminiModel = null;
 if (process.env.GEMINI_API_KEY) {
     try {
         genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+        
+        // Use gemini-pro which is widely available
+        const modelName = "gemini-pro";
+        
         geminiModel = genAI.getGenerativeModel({ 
-            model: "gemini-1.5-flash",
+            model: modelName,
             generationConfig: {
-                temperature: 0.9,  // Higher for more variety
+                temperature: 0.9,
                 maxOutputTokens: 150,
                 topP: 0.95,
                 topK: 40,
             }
         });
-        console.log('✅ Gemini AI initialized successfully');
+        console.log(`✅ Gemini AI initialized successfully (model: ${modelName})`);
     } catch (error) {
         console.error('❌ Failed to initialize Gemini:', error.message);
     }
@@ -667,7 +671,7 @@ Examples of GOOD responses for different situations:
                 const result = await geminiModel.generateContent({
                     contents: [{ role: 'user', parts: [{ text: 'Hello' }] }]
                 });
-                return { status: 'ok', provider: 'gemini', model: 'gemini-1.5-flash' };
+                return { status: 'ok', provider: 'gemini', model: 'gemini-pro' };
             }
             return { status: 'unavailable', provider: 'none' };
         } catch {

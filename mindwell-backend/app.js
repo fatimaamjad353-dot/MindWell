@@ -16,6 +16,7 @@ const adminRoutes = require('./src/routes/admin.routes');
 const recommenderRoutes = require('./src/routes/recommender.routes');
 const psychiatristRoutes = require('./src/routes/psychiatrist.routes'); 
 const twilioRoutes = require('./src/routes/twilio.routes');
+const passwordResetRoutes = require('./src/routes/passwordReset.routes');
 
 const app = express();
 
@@ -69,6 +70,8 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/psychiatrist', psychiatristRoutes);
 //Twilio routes
 app.use('/api/twilio', twilioRoutes);
+//password reset routes
+app.use('/api/password-reset', passwordResetRoutes);
 
 // ─── Health Check ──────────────────────────────────────────
 app.get('/api/health', (req, res) => {

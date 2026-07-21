@@ -4,7 +4,7 @@ const MoodEntry = require('../models/MoodEntry');
 const aiService = require('../services/ai.service');
 const axios = require('axios');
 
-const PYTHON_AI_URL = process.env.PYTHON_AI_URL || 'http://localhost:5001';
+const PYTHON_AI_URL = process.env.PYTHON_AI_URL || 'http://localhost:5010';
 
 // ─── Call Python /analyze (Diagnosis + Sentiment + Severity) ─────────────────
 const analyzeSentiment = async (text) => {
@@ -132,31 +132,33 @@ const sendMessage = async (req, res) => {
             });
         }
 
-        // ─── Response ─────────────────────────────────────────────────────────
-        // In ai.controller.js - update the response section
-res.status(200).json({
-    success: true,
-    data: {
-        chatId: chat._id,
-        intent: aiResult.intent,
-        riskLevel: finalRiskLevel,
-        escalatedToHuman: aiResult.escalatedToHuman,
-        aiResponse: aiResult.aiResponse,
-        language: detectedLanguage,
-        usedFAQ: aiResult.usedFAQ,
-        showDiagnosisCard: aiResult.showDiagnosisCard || false,
-        diagnosisCardData: aiResult.diagnosisCardData || null,
-        diagnosis: {
-            label: diagnosis,
-            confidence: confidence,
-            severity: severity,
-            severityLabel: severity_label,
-            top3: top3 || [],
-            needsHelp: diagnosis && diagnosis !== 'No issue detected'
-        },
-        messages: chat.messages
-    }
-});
+        // ─── ✅ FIXED: Response with ALL variables defined ────────────────────
+        res.status(200).json({
+            success: true,
+            data: {
+                chatId: chat._id,
+                intent: aiResult.intent,
+                riskLevel: finalRiskLevel,
+                escalatedToHuman: aiResult.escalatedToHuman,
+                aiResponse: aiResult.aiResponse,
+                language: detectedLanguage,
+                usedFAQ: aiResult.usedFAQ,
+                showDiagnosisCard: aiResult.showDiagnosisCard || false,
+                diagnosisCardData: aiResult.diagnosisCardData || null,
+                // ✅ Use aiResult properties - NO undefined variables
+                diagnosis: {
+                    label: aiResult.diagnosis || 'No issue detected',
+                    confidence: aiResult.confidence || 0,
+                    severity: aiResult.severity || 'Unknown',
+                    severityLabel: aiResult.severityLabel || 'Low',
+                    top3: aiResult.top3 || [],
+                    needsHelp: aiResult.diagnosis && 
+                              aiResult.diagnosis !== 'No issue detected' && 
+                              aiResult.confidence > 50
+                },
+                messages: chat.messages
+            }
+        });
 
     } catch (error) {
         console.error('AI Chat Error:', error.message);

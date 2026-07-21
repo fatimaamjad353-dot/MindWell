@@ -510,3 +510,26 @@ export const fetchTwilioConversationToken = (payload) => request({
   method: 'POST',
   body: payload
 });
+// app/utils/apiService.js - Add these functions
+
+// ─── Password Reset Functions ──────────────────────────────────
+
+export const requestPasswordReset = (payload) => request({
+  path: '/password-reset/request',
+  method: 'POST',
+  body: payload,
+  auth: false
+});
+
+export const verifyResetToken = (token, role) => request({
+  path: `/password-reset/verify?token=${token}&role=${role}`,
+  method: 'GET',
+  auth: false
+});
+
+export const resetPassword = (payload) => request({
+  path: '/password-reset/reset',
+  method: 'POST',
+  body: payload,
+  auth: false
+});
