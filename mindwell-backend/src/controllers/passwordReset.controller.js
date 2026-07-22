@@ -12,11 +12,8 @@ const generateResetToken = () => {
 
 // ─── Send password reset email ─────────────────────────────────────
 const sendResetEmail = async (email, resetToken, role) => {
-    // ─── App Deep Link (opens the app) ────────────────────────
-    const appLink = `mindwell://reset-password?token=${resetToken}&role=${role}`;
-    
-    // ─── Web Fallback (opens in browser) ──────────────────────
-    const webLink = `http://192.168.10.6:8081/reset-password?token=${resetToken}&role=${role}`;
+    // ─── Simple web link (no deep linking) ─────────────────────
+    const resetLink = `http://192.168.10.6:8081/reset-password?token=${resetToken}&role=${role}`;
     
     const subject = 'MindWell - Password Reset Request';
     const html = `
@@ -31,7 +28,6 @@ const sendResetEmail = async (email, resetToken, role) => {
                 .footer { text-align: center; color: #888; font-size: 12px; margin-top: 20px; }
                 .warning { background: #FFF3CD; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #FFC107; }
                 .link-box { background: #f0f0f0; padding: 10px; border-radius: 5px; word-break: break-all; font-size: 12px; margin: 10px 0; }
-                .app-btn { display: inline-block; background: #1D9E75; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
             </style>
         </head>
         <body>
@@ -43,10 +39,9 @@ const sendResetEmail = async (email, resetToken, role) => {
                 <h2>Hello,</h2>
                 <p>We received a request to reset your password for your MindWell account.</p>
                 
-                <p><strong>Option 1: Open in App (Recommended)</strong></p>
-                <p>Click the button below to open the app and reset your password:</p>
+                <p>Click the button below to reset your password:</p>
                 <div style="text-align: center;">
-                    <a href="${appLink}" class="app-btn">📱 Open App & Reset Password</a>
+                    <a href="${resetLink}" class="button">Reset Password</a>
                 </div>
                 
                 <div class="warning">
@@ -54,11 +49,8 @@ const sendResetEmail = async (email, resetToken, role) => {
                     <p>If you didn't request this, you can safely ignore this email.</p>
                 </div>
                 
-                <p><strong>Option 2: Copy this token and paste in the app</strong></p>
-                <div class="link-box">Token: ${resetToken}</div>
-                
-                <p><strong>Option 3: Use Web Browser (Fallback)</strong></p>
-                <div class="link-box"><a href="${webLink}">${webLink}</a></div>
+                <p>Or copy and paste this link into your browser:</p>
+                <div class="link-box">${resetLink}</div>
                 
                 <p style="font-size: 12px; color: #888; margin-top: 20px;">
                     If you're having trouble, please contact support at support@mindwell.com
@@ -73,8 +65,7 @@ const sendResetEmail = async (email, resetToken, role) => {
     `;
 
     console.log('📧 Sending password reset email to:', email);
-    console.log('🔗 App Deep Link:', appLink);
-    console.log('🌐 Web Link:', webLink);
+    console.log('🔗 Reset Link:', resetLink);
     await emailService.sendEmail(email, subject, html);
 };
 

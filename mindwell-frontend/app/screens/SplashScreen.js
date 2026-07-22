@@ -1,10 +1,10 @@
 // app/screens/SplashScreen.js
-import React, { useEffect, useRef } from 'react';  // ← Add React import
+import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
 
 export default function SplashScreen({ navigation }) {
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(0.5)).current;
+  const fadeAnim = new Animated.Value(0);
+  const scaleAnim = new Animated.Value(0.5);
 
   useEffect(() => {
     Animated.parallel([
@@ -13,7 +13,7 @@ export default function SplashScreen({ navigation }) {
     ]).start();
 
     setTimeout(() => {
-      navigation.replace('Role');
+      navigation.replace('Language');
     }, 2500);
   }, []);
 

@@ -15,7 +15,7 @@ import {
 import { verifyResetToken, resetPassword } from '../utils/apiService';
 
 export default function ResetPasswordScreen({ navigation, route }) {
-  // Get token and role from route params (deep link)
+  // Get token and role from route params
   const { token: routeToken, role: routeRole } = route.params || {};
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -29,21 +29,16 @@ export default function ResetPasswordScreen({ navigation, route }) {
 
   useEffect(() => {
     if (routeToken && routeRole) {
-      console.log('📧 Token from deep link:', routeToken);
-      console.log('👤 Role from deep link:', routeRole);
+      console.log('📧 Token from params:', routeToken);
+      console.log('👤 Role from params:', routeRole);
       setToken(routeToken);
       setRole(routeRole);
       verifyToken(routeToken, routeRole);
     } else {
-      // Check if we have params from navigation
-      if (route.params?.token && route.params?.role) {
-        verifyToken(route.params.token, route.params.role);
-      } else {
-        Alert.alert('Invalid Link', 'The password reset link is invalid.', [
-          { text: 'Go Back', onPress: () => navigation.navigate('Login') }
-        ]);
-        setVerifying(false);
-      }
+      Alert.alert('Invalid Link', 'The password reset link is invalid.', [
+        { text: 'Go Back', onPress: () => navigation.navigate('Login') }
+      ]);
+      setVerifying(false);
     }
   }, []);
 

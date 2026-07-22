@@ -1,3 +1,4 @@
+// app/screens/LanguageScreen.js
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { useLanguage } from '../context/LanguageContext';
@@ -5,7 +6,7 @@ import { useLanguage } from '../context/LanguageContext';
 const languages = [
   { code: 'en', name: 'English', native: 'English', flag: '🇬🇧', rtl: false },
   { code: 'ur', name: 'Urdu', native: 'اردو', flag: '🇵🇰', rtl: true },
-  { code: 'de', name: 'German', native: 'Deutsch', flag: '🇩🇪', rtl: false },
+  // { code: 'de', name: 'German', native: 'Deutsch', flag: '🇩🇪', rtl: false }, // ← Remove this line
   { code: 'ar', name: 'Arabic', native: 'العربية', flag: '🇸🇦', rtl: true },
 ];
 
@@ -37,7 +38,7 @@ export default function LanguageScreen({ navigation, route }) {
 
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.subtitle}>Choose your preferred language</Text>
-        <Text style={styles.subtitleSmall}>اپنی زبان منتخب کریں • Sprache wählen • اختر لغتك</Text>
+        <Text style={styles.subtitleSmall}>اپنی زبان منتخب کریں • اختر لغتك</Text>
 
         {languages.map((lang) => (
           <TouchableOpacity
@@ -59,7 +60,6 @@ export default function LanguageScreen({ navigation, route }) {
         <TouchableOpacity style={styles.confirmBtn} onPress={handleConfirm}>
           <Text style={styles.confirmBtnText}>
             {selected === 'ur' ? 'جاری رکھیں ←' :
-             selected === 'de' ? 'Weiter →' :
              selected === 'ar' ? 'متابعة ←' : 'Continue →'}
           </Text>
         </TouchableOpacity>
