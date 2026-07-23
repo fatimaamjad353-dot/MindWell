@@ -1,230 +1,298 @@
+// app/screens/LoginScreen.js
 import React, { useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+  View, Text, TextInput, TouchableOpacity,
+  StyleSheet, Alert, ActivityIndicator,
+  KeyboardAvoidingView, Platform, ScrollView
 } from 'react-native';
-import { loginPatient, loginPsychiatrist, setAuthToken } from '../utils/apiService';
-
-const roleCopy = {
-  patient: {
-    title: 'Welcome back',
-    subtitle: 'Continue tracking your mood, sessions, and wellness plan.',
-    badge: 'Patient account',
-    accent: '#6C63FF',
-    soft: '#E8E6FF',
-    icon: 'P'
-  },
-  psychologist: {
-    title: 'Welcome, Doctor',
-    subtitle: 'Access patient summaries, appointments, and clinical tools.',
-    badge: 'Psychiatrist account',
-    accent: '#1D9E75',
-    soft: '#E8F5E9',
-    icon: 'Dr'
-  }
-};
-
-const demoPsychiatrist = {
-  name: 'Dr. Demo Psychiatrist',
-  email: 'demo.psych@mindwell.test',
-  role: 'psychologist',
-  specialty: 'Anxiety & Depression',
-  verificationId: 'DEMO-PSY-APPROVED',
-  certifications: 'Demo Board Certification, MindWell Clinical Training',
-  accountStatus: 'approved',
-};
+import {
+  loginPatient,
+  loginPsychiatrist,
+  loginAdmin,
+  setAuthToken,
+  setCurrentUser
+} from '../utils/apiService';
+import { useLanguage } from '../context/LanguageContext';
 
 export default function LoginScreen({ navigation, route }) {
   const role = route.params?.role || 'patient';
-  const copy = roleCopy[role] || roleCopy.patient;
+  const { t } = useLanguage();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleLogin = async () => {
-    const normalizedEmail = email.trim().toLowerCase();
+    console.log('[LoginScreen] submit', { email, role });
 
-    if (!normalizedEmail || !password) {
-      Alert.alert('Error', 'Please fill all fields');
-      return;
-    }
-
-    if (!normalizedEmail.includes('@')) {
-      Alert.alert('Error', 'Please enter a valid email');
+    if (!email.trim() || !password.trim()) {
+      Alert.alert('Missing Fields', 'Please enter your email and password.');
       return;
     }
 
     setLoading(true);
-    console.log('[LoginScreen] submit', { role, email: normalizedEmail });
+
     try {
-      const user = {
-        name: normalizedEmail.split('@')[0],
-        email: normalizedEmail,
-        role
-      };
+      let result;
 
       if (role === 'patient') {
         console.log('[LoginScreen] patient login request');
-        const response = await loginPatient({ email: normalizedEmail, password });
-        await setAuthToken(response.token);
-        navigation.replace('PatientDashboard', { user: response.user || user });
-      } else {
+        result = await loginPatient({ email: email.trim(), password });
+
+      } else if (role === 'psychologist' || role === 'psychiatrist') {
         console.log('[LoginScreen] psychiatrist login request');
-        const response = await loginPsychiatrist({ email: normalizedEmail, password });
-        await setAuthToken(response.token);
-        navigation.replace('PsychologistDashboard', { user: response.user || user });
+        result = await loginPsychiatrist({ email: email.trim(), password });
+
+      } else if (role === 'admin') {
+        console.log('[LoginScreen] admin login request');
+        result = await loginAdmin({ email: email.trim(), password });
       }
+
+      if (result?.success && result?.token) {
+        // ✅ Save token and user data
+        await setAuthToken(result.token);
+        await setCurrentUser(result.user);
+
+        console.log('[LoginScreen] login success', result.user);
+
+        // ✅ Navigate based on role
+        const userRole = result.user?.role || role;
+
+        if (userRole === 'patient') {
+          navigation.replace('PatientDashboard');
+        } else if (userRole === 'psychiatrist') {
+          navigation.replace('PsychologistDashboard');
+        } else if (userRole === 'admin') {
+          navigation.replace('Admin');
+        } else {
+          navigation.replace('PatientDashboard');
+        }
+
+      } else {
+        Alert.alert('Login Failed', result?.message || 'Invalid credentials');
+      }
+
     } catch (error) {
-      console.log('[LoginScreen] login failed', error.message || error);
-      Alert.alert('Login failed', error.message || 'Please check your credentials and try again.');
+      console.log('[LoginScreen] login failed', error.message);
+      Alert.alert(
+        'Login Failed',
+        error.message || 'Something went wrong. Please try again.'
+      );
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDemoPsychLogin = () => {
-    navigation.replace('PsychologistDashboard', { user: demoPsychiatrist });
+  const getRoleTitle = () => {
+    if (role === 'psychologist' || role === 'psychiatrist') return 'Psychiatrist';
+    if (role === 'admin') return 'Admin';
+    return 'Patient';
+  };
+
+  const getRoleEmoji = () => {
+    if (role === 'psychologist' || role === 'psychiatrist') return '👨‍⚕️';
+    if (role === 'admin') return '🛡️';
+    return '🧠';
   };
 
   return (
-    <ScrollView
+    <KeyboardAvoidingView
       style={styles.container}
-      contentContainerStyle={styles.content}
-      keyboardShouldPersistTaps="handled"
-      keyboardDismissMode="on-drag"
-      automaticallyAdjustKeyboardInsets
-      showsVerticalScrollIndicator={false}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <View style={[styles.hero, { backgroundColor: copy.accent }]}>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <Text style={styles.backButtonText}>{'<'}</Text>
-        </TouchableOpacity>
-        <View style={styles.heroTop}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => navigation.goBack()}
+          >
+            <Text style={styles.backBtnText}>←</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Logo */}
+        <View style={styles.logoSection}>
           <View style={styles.logoCircle}>
-            <Text style={[styles.logoText, { color: copy.accent }]}>{copy.icon}</Text>
+            <Text style={styles.logoEmoji}>{getRoleEmoji()}</Text>
           </View>
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>{copy.badge}</Text>
-          </View>
-        </View>
-        <Text style={styles.title}>{copy.title}</Text>
-        <Text style={styles.subtitle}>{copy.subtitle}</Text>
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Sign in</Text>
-        <Text style={styles.cardSub}>Use the email and password linked to your MindWell account.</Text>
-
-        <Text style={styles.label}>Email address</Text>
-        <View style={styles.inputWrap}>
-          <Text style={styles.inputIcon}>@</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="name@example.com"
-            placeholderTextColor="#A4A4B5"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
+          <Text style={styles.appName}>MindWell</Text>
+          <Text style={styles.roleLabel}>{getRoleTitle()} Login</Text>
         </View>
 
-        <View style={styles.labelRow}>
-          <Text style={styles.label}>Password</Text>
-          <TouchableOpacity onPress={() => navigation.navigate('ForgotPassword')}>
-            <Text style={[styles.inlineLink, { color: copy.accent }]}>Forgot?</Text>
-          </TouchableOpacity>
-        </View>
-        <View style={styles.inputWrap}>
-          <Text style={styles.inputIcon}>*</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter your password"
-            placeholderTextColor="#A4A4B5"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry={!showPwd}
-            onSubmitEditing={handleLogin}
-          />
-          <TouchableOpacity onPress={() => setShowPwd(current => !current)}>
-            <Text style={[styles.toggle, { color: copy.accent }]}>{showPwd ? 'Hide' : 'Show'}</Text>
-          </TouchableOpacity>
-        </View>
-
-        {role === 'psychologist' && (
-          <>
-            <View style={[styles.securityNote, { backgroundColor: copy.soft }]}>
-              <Text style={[styles.securityTitle, { color: copy.accent }]}>Two-factor required</Text>
-              <Text style={styles.securityText}>Approved psychiatrist accounts verify identity after password login.</Text>
+        {/* Form */}
+        <View style={styles.form}>
+          {/* Email */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Email Address</Text>
+            <View style={styles.inputBox}>
+              <Text style={styles.inputIcon}>📧</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter your email"
+                placeholderTextColor="#aaa"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!loading}
+              />
             </View>
-            <TouchableOpacity style={styles.demoButton} onPress={handleDemoPsychLogin}>
-              <Text style={[styles.demoButtonText, { color: copy.accent }]}>Use demo psychiatrist account</Text>
-              <Text style={styles.demoHint}>Skips approval for frontend testing</Text>
-            </TouchableOpacity>
-          </>
-        )}
+          </View>
 
-        <TouchableOpacity
-          style={[styles.primaryButton, { backgroundColor: copy.accent }, loading && styles.primaryButtonDisabled]}
-          onPress={handleLogin}
-          disabled={loading}
-        >
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Log in</Text>}
-        </TouchableOpacity>
+          {/* Password */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Password</Text>
+            <View style={styles.inputBox}>
+              <Text style={styles.inputIcon}>🔒</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter your password"
+                placeholderTextColor="#aaa"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!loading}
+              />
+              <TouchableOpacity
+                onPress={() => setShowPassword(!showPassword)}
+                style={styles.eyeBtn}
+              >
+                <Text>{showPassword ? '🙈' : '👁️'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
 
-        <TouchableOpacity onPress={() => navigation.navigate('Register', { role })}>
-          <Text style={styles.switchText}>
-            New to MindWell? <Text style={[styles.switchBold, { color: copy.accent }]}>Create account</Text>
-          </Text>
-        </TouchableOpacity>
-      </View>
+          {/* Forgot Password */}
+          <TouchableOpacity
+            style={styles.forgotBtn}
+            onPress={() => navigation.navigate('ForgotPassword', { role })}
+          >
+            <Text style={styles.forgotText}>Forgot Password?</Text>
+          </TouchableOpacity>
 
-      <Text style={styles.footerText}>Your wellness data stays private and consent-controlled.</Text>
-    </ScrollView>
+          {/* Login Button */}
+          <TouchableOpacity
+            style={[styles.loginBtn, loading && styles.loginBtnDisabled]}
+            onPress={handleLogin}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.loginBtnText}>Login →</Text>
+            )}
+          </TouchableOpacity>
+
+          {/* Register Link — only for patients */}
+          {(role === 'patient') && (
+            <View style={styles.registerRow}>
+              <Text style={styles.registerText}>Don't have an account? </Text>
+              <TouchableOpacity
+                onPress={() => navigation.navigate('Register', { role })}
+              >
+                <Text style={styles.registerLink}>Sign Up</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Psychiatrist register link */}
+          {(role === 'psychologist' || role === 'psychiatrist') && (
+            <View style={styles.registerRow}>
+              <Text style={styles.registerText}>New psychiatrist? </Text>
+              <TouchableOpacity
+                onPress={() => navigation.navigate('Register', { role: 'psychiatrist' })}
+              >
+                <Text style={styles.registerLink}>Apply Here</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F0EFFF' },
-  content: { flexGrow: 1, paddingBottom: 28 },
-  hero: { paddingHorizontal: 24, paddingTop: 52, paddingBottom: 58, borderBottomLeftRadius: 28, borderBottomRightRadius: 28 },
-  backButton: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center', marginBottom: 18 },
-  backButtonText: { color: '#fff', fontSize: 25, lineHeight: 28 },
-  heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 },
-  logoCircle: { width: 62, height: 62, borderRadius: 31, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
-  logoText: { fontSize: 20, fontWeight: '900' },
-  badge: { backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 18, paddingHorizontal: 13, paddingVertical: 8 },
-  badgeText: { color: '#fff', fontSize: 12, fontWeight: '800' },
-  title: { color: '#fff', fontSize: 30, fontWeight: '900' },
-  subtitle: { color: 'rgba(255,255,255,0.86)', fontSize: 14, lineHeight: 21, marginTop: 8, maxWidth: 310 },
-  card: { backgroundColor: '#fff', marginHorizontal: 18, marginTop: -34, borderRadius: 24, padding: 22, elevation: 4 },
-  cardTitle: { color: '#1a1a2e', fontSize: 22, fontWeight: '900' },
-  cardSub: { color: '#777', fontSize: 13, lineHeight: 19, marginTop: 5, marginBottom: 12 },
-  label: { color: '#333', fontSize: 13, fontWeight: '800', marginTop: 14, marginBottom: 7 },
-  labelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
-  inlineLink: { fontSize: 12, fontWeight: '800', marginBottom: 7 },
-  inputWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8F8FC', borderWidth: 1, borderColor: '#E1E1EC', borderRadius: 15, paddingHorizontal: 14 },
-  inputIcon: { color: '#9A9AAD', fontSize: 15, fontWeight: '800', marginRight: 10 },
-  input: { flex: 1, color: '#222', fontSize: 15, paddingVertical: 14 },
-  toggle: { fontSize: 12, fontWeight: '900', paddingLeft: 8 },
-  securityNote: { borderRadius: 14, padding: 13, marginTop: 16 },
-  securityTitle: { fontSize: 12, fontWeight: '900' },
-  securityText: { color: '#555', fontSize: 11, lineHeight: 16, marginTop: 3 },
-  demoButton: { borderWidth: 1.5, borderColor: '#D7D4FF', backgroundColor: '#fff', borderRadius: 14, padding: 13, alignItems: 'center', marginTop: 12 },
-  demoButtonText: { fontSize: 13, fontWeight: '900' },
-  demoHint: { color: '#777', fontSize: 11, marginTop: 3 },
-  primaryButton: { borderRadius: 15, paddingVertical: 15, alignItems: 'center', marginTop: 22 },
-  primaryButtonDisabled: { opacity: 0.7 },
-  primaryButtonText: { color: '#fff', fontSize: 16, fontWeight: '900' },
-  switchText: { color: '#666', fontSize: 14, textAlign: 'center', marginTop: 18 },
-  switchBold: { fontWeight: '900' },
-  footerText: { color: '#7B7894', textAlign: 'center', fontSize: 12, marginTop: 18, paddingHorizontal: 24 },
+  scrollContent: { flexGrow: 1, paddingBottom: 30 },
+  header: {
+    paddingTop: 50,
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  backBtn: {
+    width: 40, height: 40,
+    borderRadius: 20,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 2,
+  },
+  backBtnText: { fontSize: 20, color: '#6C63FF', fontWeight: '700' },
+  logoSection: { alignItems: 'center', paddingVertical: 32 },
+  logoCircle: {
+    width: 90, height: 90,
+    borderRadius: 45,
+    backgroundColor: '#6C63FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    elevation: 4,
+  },
+  logoEmoji: { fontSize: 44 },
+  appName: {
+    fontSize: 32, fontWeight: '800',
+    color: '#1a1a2e', marginBottom: 6
+  },
+  roleLabel: {
+    fontSize: 16, color: '#6C63FF',
+    fontWeight: '600'
+  },
+  form: { paddingHorizontal: 24 },
+  inputGroup: { marginBottom: 16 },
+  inputLabel: {
+    fontSize: 14, fontWeight: '600',
+    color: '#1a1a2e', marginBottom: 8
+  },
+  inputBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    elevation: 2,
+    gap: 10,
+  },
+  inputIcon: { fontSize: 18 },
+  input: { flex: 1, fontSize: 15, color: '#333' },
+  eyeBtn: { padding: 4 },
+  forgotBtn: { alignSelf: 'flex-end', marginBottom: 24 },
+  forgotText: { fontSize: 13, color: '#6C63FF', fontWeight: '600' },
+  loginBtn: {
+    backgroundColor: '#6C63FF',
+    borderRadius: 14,
+    paddingVertical: 16,
+    alignItems: 'center',
+    elevation: 3,
+    marginBottom: 20,
+  },
+  loginBtnDisabled: { opacity: 0.65 },
+  loginBtnText: { color: '#fff', fontSize: 17, fontWeight: '700' },
+  registerRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  registerText: { fontSize: 14, color: '#666' },
+  registerLink: { fontSize: 14, color: '#6C63FF', fontWeight: '700' },
 });

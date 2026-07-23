@@ -55,27 +55,36 @@ const PatientSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
-     resetPasswordToken: {
-    type: String,
-    default: null
-},
-resetPasswordExpires: {
-    type: Date,
-    default: null
-}
+    resetPasswordToken: {
+      type: String,
+      default: null
+    },
+    resetPasswordExpires: {
+      type: Date,
+      default: null
+    },
+
+    // ✅ Data sharing consent
+    dataShareConsent: {
+      type: Boolean,
+      default: false
+    },
+    consentUpdatedAt: {
+      type: Date,
+      default: null
+    }
   },
   {
     timestamps: true,
   }
-  
 );
 
-// ─── Compare password method ────────────────────────────────
+// ─── Compare password method ──────────────────────────────────
 PatientSchema.methods.comparePassword = async function (password) {
   return await bcrypt.compare(password, this.password);
 };
 
-// ─── ToJSON to remove password ──────────────────────────────
+// ─── ToJSON to remove password ────────────────────────────────
 PatientSchema.methods.toJSON = function () {
   const obj = this.toObject();
   delete obj.password;

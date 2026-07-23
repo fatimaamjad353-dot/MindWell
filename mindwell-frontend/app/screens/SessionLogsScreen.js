@@ -1,290 +1,297 @@
-import React, { useCallback, useMemo, useState } from 'react';
+// app/screens/SessionLogsScreen.js
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  ScrollView,
-  Alert,
-  TextInput
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  ActivityIndicator, Alert, RefreshControl
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
-import { getMySessionsApi, rateSessionApi } from '../utils/apiService';
+import { request } from '../utils/apiService';
 
-const demoSessions = [
-  { id: 'demo-1', therapist: 'Dr. Ayesha Khan', date: 'May 5, 2026', time: '10:00 AM', type: 'Video', status: 'Completed', duration: '45 min' },
-  { id: 'demo-2', therapist: 'Dr. Omar Farooq', date: 'Apr 28, 2026', time: '3:00 PM', type: 'Audio', status: 'Completed', duration: '45 min' },
-  { id: 'demo-3', therapist: 'Dr. Ayesha Khan', date: 'May 12, 2026', time: '11:00 AM', type: 'Video', status: 'Upcoming', duration: '45 min' }
+const STATUS_TABS = [
+  { label: 'Upcoming', statuses: ['Pending', 'Confirmed'] },
+  { label: 'Completed', statuses: ['Completed'] },
+  { label: 'Cancelled', statuses: ['Cancelled', 'Rejected'] },
 ];
 
-export default function SessionLogsScreen({ navigation, route }) {
-  const [tab, setTab] = useState('all');
-  const [bookings, setBookings] = useState([]);
-  const [ratings, setRatings] = useState([]);
-  const [ratingSessionId, setRatingSessionId] = useState(null);
-  const [selectedStars, setSelectedStars] = useState(0);
-  const [feedback, setFeedback] = useState('');
-  const recentBookingId = route.params?.recentBookingId;
+const STATUS_COLORS = {
+  Pending:   { bg: '#FFF9C4', text: '#F59E0B' },
+  Confirmed: { bg: '#E8F5E9', text: '#1D9E75' },
+  Completed: { bg: '#E8EAF6', text: '#6C63FF' },
+  Cancelled: { bg: '#FFEBEE', text: '#FF6B6B' },
+  Rejected:  { bg: '#FFEBEE', text: '#FF6B6B' },
+};
 
-  const loadData = useCallback(async () => {
+const TYPE_ICONS = { Video: '📹', Audio: '🎙️', Text: '💬' };
+
+export default function SessionLogsScreen({ navigation, route }) {
+  const [activeTab, setActiveTab] = useState(0);
+  const [sessions, setSessions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadSessions = useCallback(async () => {
     try {
-      const response = await getMySessionsApi();
-      const backendSessions = (response?.data || []).map(session => ({
-        id: session._id || session.id,
-        therapist: session.psychiatristId?.name || 'Psychiatrist',
-        therapistId: session.psychiatristId?._id || session.psychiatristId?.id || null,
-        date: session.dateTime ? new Date(session.dateTime).toISOString() : null,
-        time: session.dateTime ? new Date(session.dateTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'Time TBD',
-        type: session.sessionType || 'Video',
-        status: session.status || 'Pending',
-        duration: '45 min',
-        paymentStatus: session.paymentStatus || 'Pending',
-        createdAt: session.createdAt
-      }));
-      setBookings(backendSessions);
-    } catch {
-      setBookings([]);
+      const result = await request({ path: '/sessions/my' });
+      setSessions(result?.data || []);
+    } catch (error) {
+      console.error('Sessions error:', error.message);
+      Alert.alert('Error', 'Could not load sessions. Please try again.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
-    setRatings([]);
   }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      loadData();
-    }, [loadData])
+  useEffect(() => {
+    loadSessions();
+  }, [loadSessions]);
+
+  // ✅ Highlight recent booking if coming from payment
+  useEffect(() => {
+    if (route.params?.recentBookingId) {
+      setActiveTab(0); // Switch to Upcoming tab
+    }
+  }, [route.params]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadSessions();
+  };
+
+  const filteredSessions = sessions.filter(s =>
+    STATUS_TABS[activeTab].statuses.includes(s.status)
   );
 
-  const sessions = useMemo(() => {
-    return bookings.map(booking => ({
-      ...booking,
-      date: booking.date
-        ? new Date(booking.date).toLocaleDateString(undefined, {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric'
-          })
-        : 'Date unavailable'
-    }));
-  }, [bookings]);
-
-  const filtered = sessions.filter(session =>
-    tab === 'all'
-      ? true
-      : tab === 'upcoming'
-        ? session.status === 'Upcoming'
-        : session.status === 'Completed'
-  );
-
-  const ratingFor = sessionId =>
-    ratings.find(item => String(item.sessionId) === String(sessionId));
-
-  const joinSession = session => {
-    const type = String(session.type || 'Video').toLowerCase();
-    const screen = type === 'text' ? 'TextSession' : 'TwilioCall';
-    navigation.navigate(screen, {
-      role: 'patient',
-      session: {
-        id: session.id,
-        therapist: session.therapist,
-        time: session.time,
-        type: session.type
-      }
-    });
+  const handleCancel = async (sessionId) => {
+    Alert.alert(
+      'Cancel Session',
+      'Are you sure you want to cancel this session?',
+      [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Yes, Cancel',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await request({
+                path: `/sessions/cancel/${sessionId}`,
+                method: 'DELETE'
+              });
+              Alert.alert('Cancelled', 'Session has been cancelled.');
+              loadSessions();
+            } catch (error) {
+              Alert.alert('Error', error.message || 'Could not cancel session.');
+            }
+          }
+        }
+      ]
+    );
   };
 
-  const openRating = session => {
-    const existing = ratingFor(session.id);
-    setRatingSessionId(session.id);
-    setSelectedStars(existing?.stars || 0);
-    setFeedback(existing?.note || '');
+  const handleRate = (session) => {
+    navigation.navigate('RateSession', { session });
   };
 
-  const submitRating = async session => {
-    if (!selectedStars) {
-      Alert.alert('Select a rating', 'Please choose between one and five stars.');
-      return;
-    }
-    if (feedback.trim().length < 10) {
-      Alert.alert('Add more detail', 'Please write at least 10 characters about your experience.');
-      return;
-    }
-
-    try {
-      await rateSessionApi(session.id, {
-        rating: selectedStars,
-        feedback: feedback.trim()
-      });
-      await loadData();
-    } catch {
-      Alert.alert('Could not save rating', 'Please try again.');
-      return;
-    }
-    setRatingSessionId(null);
-    setSelectedStars(0);
-    setFeedback('');
-    Alert.alert('Thank you', 'Your rating was shared with the psychiatrist.');
-  };
+  if (loading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color="#6C63FF" />
+        <Text style={styles.loadingText}>Loading sessions...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.back}>←</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>My Sessions</Text>
-        <View style={styles.headerSpacer} />
+        <View style={{ width: 30 }} />
       </View>
 
+      {/* Tabs */}
       <View style={styles.tabs}>
-        {['all', 'upcoming', 'completed'].map(item => (
-          <TouchableOpacity
-            key={item}
-            style={[styles.tab, tab === item && styles.tabActive]}
-            onPress={() => setTab(item)}
-          >
-            <Text style={[styles.tabText, tab === item && styles.tabTextActive]}>
-              {item[0].toUpperCase() + item.slice(1)}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <ScrollView
-        style={styles.list}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-        automaticallyAdjustKeyboardInsets
-        showsVerticalScrollIndicator={false}
-      >
-        {filtered.map(session => {
-          const savedRating = ratingFor(session.id);
-          const formOpen = ratingSessionId === session.id;
-
+        {STATUS_TABS.map((tab, index) => {
+          const count = sessions.filter(s =>
+            tab.statuses.includes(s.status)
+          ).length;
           return (
-            <View
-              key={session.id}
-              style={[
-                styles.card,
-                session.id === recentBookingId && styles.recentCard
-              ]}
+            <TouchableOpacity
+              key={tab.label}
+              style={[styles.tab, activeTab === index && styles.tabActive]}
+              onPress={() => setActiveTab(index)}
             >
-              <View style={styles.badgeRow}>
-                {session.id === recentBookingId ? (
-                  <View style={styles.recentBadge}>
-                    <Text style={styles.recentBadgeText}>Recently booked</Text>
-                  </View>
-                ) : <View />}
-                <View style={[
-                  styles.statusBadge,
-                  {
-                    backgroundColor:
-                      session.status === 'Upcoming' ? '#E3F2FD' : '#E8F5E9'
-                  }
-                ]}>
-                  <Text style={[
-                    styles.statusText,
-                    {
-                      color:
-                        session.status === 'Upcoming' ? '#1565C0' : '#1D9E75'
-                    }
-                  ]}>
-                    {session.status}
+              <Text style={[styles.tabText, activeTab === index && styles.tabTextActive]}>
+                {tab.label}
+              </Text>
+              {count > 0 && (
+                <View style={[styles.badge, activeTab === index && styles.badgeActive]}>
+                  <Text style={[styles.badgeText, activeTab === index && styles.badgeTextActive]}>
+                    {count}
                   </Text>
                 </View>
-              </View>
+              )}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
 
-              <View style={styles.cardBody}>
-                <Text style={styles.therapistName}>{session.therapist}</Text>
-                <Text style={styles.sessionMeta}>{session.date} • {session.time}</Text>
-                <Text style={styles.sessionMeta}>{session.type} • {session.duration}</Text>
-                <Text style={styles.paymentStatus}>
-                  {session.paymentStatus ? `✓ Payment ${session.paymentStatus}` : ' '}
-                </Text>
-              </View>
+      {/* Sessions List */}
+      <ScrollView
+        style={styles.list}
+        contentContainerStyle={{ padding: 16 }}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#6C63FF']} />
+        }
+      >
+        {filteredSessions.length === 0 ? (
+          <View style={styles.empty}>
+            <Text style={styles.emptyIcon}>
+              {activeTab === 0 ? '📅' : activeTab === 1 ? '✅' : '❌'}
+            </Text>
+            <Text style={styles.emptyTitle}>
+              No {STATUS_TABS[activeTab].label} Sessions
+            </Text>
+            <Text style={styles.emptySubtitle}>
+              {activeTab === 0
+                ? 'Book a session with a therapist to get started'
+                : activeTab === 1
+                ? 'Your completed sessions will appear here'
+                : 'No cancelled sessions'}
+            </Text>
+            {activeTab === 0 && (
+              <TouchableOpacity
+                style={styles.findBtn}
+                onPress={() => navigation.navigate('FindTherapist')}
+              >
+                <Text style={styles.findBtnText}>Find a Therapist</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        ) : (
+          filteredSessions.map(session => {
+            const psychiatrist = session.psychiatristId;
+            const statusStyle = STATUS_COLORS[session.status] || STATUS_COLORS.Pending;
+            const sessionDate = new Date(session.dateTime);
+            const isPast = sessionDate < new Date();
 
-              <View style={styles.cardActions}>
-                {session.status === 'Pending' || session.status === 'Upcoming' ? (
-                  <TouchableOpacity
-                    style={styles.joinBtn}
-                    onPress={() => joinSession(session)}
-                  >
-                    <Text style={styles.joinBtnText}>Join Session</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity
-                    style={savedRating ? styles.ratedBtn : styles.rateBtn}
-                    onPress={() => formOpen ? setRatingSessionId(null) : openRating(session)}
-                  >
-                    <Text style={savedRating ? styles.ratedBtnText : styles.rateBtnText}>
-                      {savedRating
-                        ? `${'★'.repeat(savedRating.stars)}${'☆'.repeat(5 - savedRating.stars)}  Edit Feedback`
-                        : '☆ Rate Psychiatrist'}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-
-              {formOpen && (
-                <View style={styles.ratingForm}>
-                  <Text style={styles.ratingTitle}>How was your psychiatrist?</Text>
-                  <View style={styles.starsRow}>
-                    {[1, 2, 3, 4, 5].map(star => (
-                      <TouchableOpacity
-                        key={star}
-                        style={styles.starButton}
-                        onPress={() => setSelectedStars(star)}
-                      >
-                        <Text style={[
-                          styles.star,
-                          star <= selectedStars && styles.starSelected
-                        ]}>
-                          ★
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
+            return (
+              <View key={session._id} style={styles.card}>
+                {/* Card Header */}
+                <View style={styles.cardHeader}>
+                  <View style={styles.doctorAvatar}>
+                    <Text style={styles.doctorAvatarText}>👨‍⚕️</Text>
                   </View>
-                  <Text style={styles.ratingHint}>
-                    {selectedStars
-                      ? `${selectedStars} out of 5 stars`
-                      : 'Tap a star to rate'}
-                  </Text>
-                  <TextInput
-                    style={styles.feedbackInput}
-                    placeholder="Share what was helpful and what could be improved..."
-                    placeholderTextColor="#aaa"
-                    value={feedback}
-                    onChangeText={setFeedback}
-                    multiline
-                    maxLength={500}
-                  />
-                  <Text style={styles.characterCount}>{feedback.length}/500</Text>
-                  <View style={styles.formActions}>
+                  <View style={styles.cardInfo}>
+                    <Text style={styles.doctorName}>
+                      {psychiatrist?.name || 'Therapist'}
+                    </Text>
+                    <Text style={styles.specialty}>
+                      {psychiatrist?.specializations?.[0] || 'Psychiatrist'}
+                    </Text>
+                  </View>
+                  <View style={[styles.statusBadge, { backgroundColor: statusStyle.bg }]}>
+                    <Text style={[styles.statusText, { color: statusStyle.text }]}>
+                      {session.status}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Session Details */}
+                <View style={styles.cardDetails}>
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailIcon}>📅</Text>
+                    <Text style={styles.detailText}>
+                      {sessionDate.toLocaleDateString(undefined, {
+                        weekday: 'short',
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric'
+                      })}
+                    </Text>
+                  </View>
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailIcon}>🕐</Text>
+                    <Text style={styles.detailText}>
+                      {sessionDate.toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </Text>
+                  </View>
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailIcon}>
+                      {TYPE_ICONS[session.sessionType] || '💬'}
+                    </Text>
+                    <Text style={styles.detailText}>{session.sessionType} Session</Text>
+                  </View>
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailIcon}>💰</Text>
+                    <Text style={styles.detailText}>PKR {session.agreedRate}</Text>
+                  </View>
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailIcon}>
+                      {session.isPaid ? '✅' : '⏳'}
+                    </Text>
+                    <Text style={[
+                      styles.detailText,
+                      { color: session.isPaid ? '#1D9E75' : '#F59E0B' }
+                    ]}>
+                      {session.isPaid ? 'Paid' : 'Payment Pending'}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Action Buttons */}
+                <View style={styles.cardActions}>
+                  {/* Join button for confirmed upcoming sessions */}
+                  {session.status === 'Confirmed' && !isPast && session.meetingLink ? (
+                    <TouchableOpacity
+                      style={styles.joinBtn}
+                      onPress={() => navigation.navigate('SessionRoom', {
+                        session,
+                        meetingLink: session.meetingLink
+                      })}
+                    >
+                      <Text style={styles.joinBtnText}>Join Session</Text>
+                    </TouchableOpacity>
+                  ) : null}
+
+                  {/* Cancel button for pending/confirmed upcoming */}
+                  {['Pending', 'Confirmed'].includes(session.status) && !isPast && (
                     <TouchableOpacity
                       style={styles.cancelBtn}
-                      onPress={() => setRatingSessionId(null)}
+                      onPress={() => handleCancel(session._id)}
                     >
                       <Text style={styles.cancelBtnText}>Cancel</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.submitBtn}
-                      onPress={() => submitRating(session)}
-                    >
-                      <Text style={styles.submitBtnText}>Submit Feedback</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
-            </View>
-          );
-        })}
+                  )}
 
-        {!filtered.length && (
-          <View style={styles.empty}>
-            <Text style={styles.emptyEmoji}>📭</Text>
-            <Text style={styles.emptyText}>No sessions found</Text>
-          </View>
+                  {/* Rate button for completed unrated sessions */}
+                  {session.status === 'Completed' && !session.patientRating && (
+                    <TouchableOpacity
+                      style={styles.rateBtn}
+                      onPress={() => handleRate(session)}
+                    >
+                      <Text style={styles.rateBtnText}>⭐ Rate Session</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Show rating if already rated */}
+                  {session.status === 'Completed' && session.patientRating && (
+                    <View style={styles.ratedRow}>
+                      <Text style={styles.ratedText}>
+                        Your rating: {'⭐'.repeat(session.patientRating)}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+            );
+          })
         )}
-        <View style={styles.bottomSpace} />
       </ScrollView>
     </View>
   );
@@ -292,50 +299,121 @@ export default function SessionLogsScreen({ navigation, route }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F0EFFF' },
-  header: { backgroundColor: '#6C63FF', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, paddingTop: 50 },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { marginTop: 12, color: '#666', fontSize: 14 },
+  header: {
+    backgroundColor: '#6C63FF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    paddingTop: 50,
+  },
   back: { fontSize: 24, color: '#fff', fontWeight: '700' },
   headerTitle: { fontSize: 18, fontWeight: '700', color: '#fff' },
-  headerSpacer: { width: 30 },
-  tabs: { flexDirection: 'row', backgroundColor: '#fff', padding: 8, margin: 16, borderRadius: 12, elevation: 2 },
-  tab: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 8 },
+  tabs: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    elevation: 2,
+  },
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 6,
+  },
   tabActive: { backgroundColor: '#6C63FF' },
-  tabText: { fontSize: 14, fontWeight: '600', color: '#888' },
+  tabText: { fontSize: 13, fontWeight: '600', color: '#888' },
   tabTextActive: { color: '#fff' },
-  list: { paddingHorizontal: 16 },
-  card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 12, elevation: 3 },
-  recentCard: { borderWidth: 2, borderColor: '#6C63FF' },
-  badgeRow: { minHeight: 28, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  recentBadge: { backgroundColor: '#F0EFFF', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 },
-  recentBadgeText: { color: '#6C63FF', fontSize: 11, fontWeight: '700' },
-  statusBadge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
-  statusText: { fontSize: 12, fontWeight: '600' },
-  cardBody: { minHeight: 105, paddingTop: 8 },
-  therapistName: { fontSize: 16, fontWeight: '700', color: '#1a1a2e' },
-  sessionMeta: { fontSize: 13, color: '#888', marginTop: 5 },
-  paymentStatus: { color: '#1D9E75', fontSize: 12, fontWeight: '600', marginTop: 6, minHeight: 16 },
-  cardActions: { borderTopWidth: 1, borderTopColor: '#f0f0f0', paddingTop: 12 },
-  joinBtn: { backgroundColor: '#6C63FF', height: 42, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  joinBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
-  rateBtn: { backgroundColor: '#FFF9C4', height: 42, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#FFC107' },
-  rateBtnText: { color: '#B26A00', fontWeight: '700', fontSize: 14 },
-  ratedBtn: { backgroundColor: '#E8F5E9', height: 42, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#1D9E75' },
-  ratedBtnText: { color: '#1D9E75', fontWeight: '700', fontSize: 12 },
-  ratingForm: { marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: '#eee' },
-  ratingTitle: { fontSize: 15, fontWeight: '700', color: '#1a1a2e', textAlign: 'center' },
-  starsRow: { flexDirection: 'row', justifyContent: 'center', marginTop: 10 },
-  starButton: { paddingHorizontal: 4, paddingVertical: 3 },
-  star: { fontSize: 34, color: '#D6D6D6' },
-  starSelected: { color: '#FFC107' },
-  ratingHint: { fontSize: 12, color: '#777', textAlign: 'center', marginBottom: 12 },
-  feedbackInput: { minHeight: 100, borderWidth: 1.5, borderColor: '#ddd', borderRadius: 12, padding: 12, color: '#333', backgroundColor: '#FAFAFA', textAlignVertical: 'top' },
-  characterCount: { fontSize: 10, color: '#999', textAlign: 'right', marginTop: 4 },
-  formActions: { flexDirection: 'row', gap: 8, marginTop: 10 },
-  cancelBtn: { flex: 1, height: 42, borderRadius: 10, borderWidth: 1.5, borderColor: '#ccc', alignItems: 'center', justifyContent: 'center' },
-  cancelBtnText: { color: '#666', fontWeight: '700' },
-  submitBtn: { flex: 2, height: 42, borderRadius: 10, backgroundColor: '#6C63FF', alignItems: 'center', justifyContent: 'center' },
-  submitBtnText: { color: '#fff', fontWeight: '700' },
-  empty: { alignItems: 'center', marginTop: 40 },
-  emptyEmoji: { fontSize: 48 },
-  emptyText: { fontSize: 16, color: '#888', marginTop: 12 },
-  bottomSpace: { height: 30 }
+  badge: {
+    backgroundColor: '#eee',
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  badgeActive: { backgroundColor: 'rgba(255,255,255,0.3)' },
+  badgeText: { fontSize: 11, fontWeight: '700', color: '#888' },
+  badgeTextActive: { color: '#fff' },
+  list: { flex: 1 },
+  empty: { alignItems: 'center', paddingTop: 60, paddingHorizontal: 30 },
+  emptyIcon: { fontSize: 56, marginBottom: 16 },
+  emptyTitle: { fontSize: 18, fontWeight: '700', color: '#333', marginBottom: 8 },
+  emptySubtitle: { fontSize: 14, color: '#888', textAlign: 'center', marginBottom: 20 },
+  findBtn: {
+    backgroundColor: '#6C63FF',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  findBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 14,
+    elevation: 3,
+  },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  doctorAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#F0EFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  doctorAvatarText: { fontSize: 24 },
+  cardInfo: { flex: 1 },
+  doctorName: { fontSize: 16, fontWeight: '700', color: '#1a1a2e' },
+  specialty: { fontSize: 12, color: '#6C63FF', marginTop: 2 },
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statusText: { fontSize: 11, fontWeight: '700' },
+  cardDetails: {
+    backgroundColor: '#F8F9FA',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+    gap: 8,
+  },
+  detailRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  detailIcon: { fontSize: 14, width: 20 },
+  detailText: { fontSize: 13, color: '#555' },
+  cardActions: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  joinBtn: {
+    flex: 1,
+    backgroundColor: '#1D9E75',
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  joinBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  cancelBtn: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderColor: '#FF6B6B',
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  cancelBtnText: { color: '#FF6B6B', fontWeight: '700', fontSize: 13 },
+  rateBtn: {
+    flex: 1,
+    backgroundColor: '#6C63FF',
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  rateBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  ratedRow: { flex: 1, alignItems: 'center', paddingVertical: 8 },
+  ratedText: { fontSize: 13, color: '#666' },
 });

@@ -1,9 +1,6 @@
-// src/routes/recommender.routes.js
 const express = require('express');
 const router = express.Router();
-const { protect } = require('../middleware/auth.middleware');
-
-// Import the correct functions from your controller
+const { protect, authorize } = require('../middleware/auth.middleware');
 const {
     getTherapistRecommendations,
     getResourceRecommendations,
@@ -11,30 +8,17 @@ const {
     getPsychologistPatientSummary
 } = require('../controllers/recommender.controller');
 
-// All routes are protected (require authentication)
-router.use(protect);
+// ✅ Patient only routes
+router.post('/recommend', protect, authorize('patient'), getTherapistRecommendations);
+router.get('/triage', protect, authorize('patient'), getPatientSummary);
+router.get('/resources/:diagnosis', protect, getResourceRecommendations);
 
-// ─── Recommender Routes ─────────────────────────────
-
-// Get therapist recommendations
-router.post('/recommend', getTherapistRecommendations);
-
-// Get resource recommendations for a diagnosis
-router.get('/resources/:diagnosis', getResourceRecommendations);
-
-// Get patient summary (triage)
-router.get('/triage', getPatientSummary);
-
-// Get psychologist's view of patient summary
-router.get('/psychologist-summary/:patientId', getPsychologistPatientSummary);
+// ✅ Psychiatrist route — NO authorize restriction, just protect
+router.get('/psychologist-summary/:patientId', protect, getPsychologistPatientSummary);
 
 // Test route
-router.get('/test', (req, res) => {
-    res.json({
-        success: true,
-        message: 'Recommender route is working!',
-        user: req.user
-    });
+router.get('/test', protect, (req, res) => {
+    res.json({ success: true, message: 'Recommender working!', user: req.user });
 });
 
 module.exports = router;

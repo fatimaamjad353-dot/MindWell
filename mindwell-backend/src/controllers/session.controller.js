@@ -17,40 +17,37 @@ exports.bookSession = async (req, res) => {
       bookingSource,
     } = req.body;
 
-    console.log('📝 Booking session received:', { 
-      psychiatristId, 
-      dateTime, 
-      sessionType, 
+    console.log('📝 Booking session received:', {
+      psychiatristId,
+      dateTime,
+      sessionType,
       agreedRate,
-      userId 
+      userId
     });
 
     // ─── Validation ──────────────────────────────────────────────
     if (!psychiatristId) {
       return res.status(400).json({
         success: false,
-        message: 'Psychiatrist ID is required',
+        message: 'Psychiatrist ID is required'
       });
     }
-
     if (!dateTime) {
       return res.status(400).json({
         success: false,
-        message: 'Date and time are required',
+        message: 'Date and time are required'
       });
     }
-
     if (!sessionType) {
       return res.status(400).json({
         success: false,
-        message: 'Session type is required',
+        message: 'Session type is required'
       });
     }
-
     if (!agreedRate) {
       return res.status(400).json({
         success: false,
-        message: 'Session rate is required',
+        message: 'Session rate is required'
       });
     }
 
@@ -59,31 +56,74 @@ exports.bookSession = async (req, res) => {
     if (!psychiatrist) {
       return res.status(404).json({
         success: false,
-        message: 'Psychiatrist not found',
+        message: 'Psychiatrist not found'
       });
     }
 
-    // ─── Normalize session type (capitalize first letter) ────────
-    const normalizedSessionType = sessionType.charAt(0).toUpperCase() + sessionType.slice(1).toLowerCase();
-    
+    // ─── Normalize session type ───────────────────────────────────
+    const normalizedSessionType =
+      sessionType.charAt(0).toUpperCase() + sessionType.slice(1).toLowerCase();
+
     const validSessionTypes = ['Audio', 'Video', 'Text'];
     if (!validSessionTypes.includes(normalizedSessionType)) {
       return res.status(400).json({
         success: false,
-        message: `Session type must be one of: ${validSessionTypes.join(', ')}`,
+        message: `Session type must be one of: ${validSessionTypes.join(', ')}`
       });
     }
 
-    // ─── Normalize booking source ────────────────────────────────
-    const normalizedSource = bookingSource === 'AI_Recommended' ? 'AI_Recommended' : 'Manual';
+    // ─── ✅ Check: psychiatrist already has session at this time ──
+    const requestedTime = new Date(dateTime);
+    const sessionDuration = 60 * 60 * 1000; // 60 minutes in ms
 
-    // ─── Create session with correct field names ─────────────────
+    const conflictingSession = await Session.findOne({
+      psychiatristId,
+      status: { $in: ['Pending', 'Confirmed'] },
+      dateTime: {
+        $gte: new Date(requestedTime.getTime() - sessionDuration),
+        $lte: new Date(requestedTime.getTime() + sessionDuration)
+      }
+    });
+
+    if (conflictingSession) {
+      const conflictTime = new Date(conflictingSession.dateTime)
+        .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return res.status(409).json({
+        success: false,
+        message: `This psychiatrist already has a session at ${conflictTime}. Please choose a different time slot.`
+      });
+    }
+
+    // ─── ✅ Check: patient already has session at this time ───────
+    const patientConflict = await Session.findOne({
+      patientId: userId,
+      status: { $in: ['Pending', 'Confirmed'] },
+      dateTime: {
+        $gte: new Date(requestedTime.getTime() - sessionDuration),
+        $lte: new Date(requestedTime.getTime() + sessionDuration)
+      }
+    });
+
+    if (patientConflict) {
+      const conflictTime = new Date(patientConflict.dateTime)
+        .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return res.status(409).json({
+        success: false,
+        message: `You already have a session booked at ${conflictTime}. Please choose a different time.`
+      });
+    }
+
+    // ─── Normalize booking source ─────────────────────────────────
+    const normalizedSource =
+      bookingSource === 'AI_Recommended' ? 'AI_Recommended' : 'Manual';
+
+    // ─── Create session ───────────────────────────────────────────
     const sessionData = {
       patientId: userId,
-      psychiatristId: psychiatristId,
-      dateTime: new Date(dateTime),
+      psychiatristId,
+      dateTime: requestedTime,
       sessionType: normalizedSessionType,
-      agreedRate: agreedRate,
+      agreedRate,
       notes: notes || '',
       bookingSource: normalizedSource,
       status: 'Pending',
@@ -95,7 +135,6 @@ exports.bookSession = async (req, res) => {
     const session = new Session(sessionData);
     await session.save();
 
-    // ─── Populate and return ──────────────────────────────────────
     const populatedSession = await Session.findById(session._id)
       .populate('patientId', 'name email')
       .populate('psychiatristId', 'name email specializations');
@@ -110,7 +149,7 @@ exports.bookSession = async (req, res) => {
     console.error('❌ Book session error:', error);
     res.status(500).json({
       success: false,
-      message: error.message,
+      message: error.message
     });
   }
 };
@@ -142,7 +181,7 @@ exports.getMySessions = async (req, res) => {
     console.error('Get sessions error:', error);
     res.status(500).json({
       success: false,
-      message: error.message,
+      message: error.message
     });
   }
 };
@@ -160,7 +199,7 @@ exports.getSession = async (req, res) => {
     if (!session) {
       return res.status(404).json({
         success: false,
-        message: 'Session not found',
+        message: 'Session not found'
       });
     }
 
@@ -171,19 +210,19 @@ exports.getSession = async (req, res) => {
     ) {
       return res.status(403).json({
         success: false,
-        message: 'Unauthorized to view this session',
+        message: 'Unauthorized to view this session'
       });
     }
 
     res.json({
       success: true,
-      data: session,
+      data: session
     });
   } catch (error) {
     console.error('Get session error:', error);
     res.status(500).json({
       success: false,
-      message: error.message,
+      message: error.message
     });
   }
 };
@@ -198,21 +237,27 @@ exports.cancelSession = async (req, res) => {
     if (!session) {
       return res.status(404).json({
         success: false,
-        message: 'Session not found',
+        message: 'Session not found'
       });
     }
 
-    if (session.patientId.toString() !== userId && req.user.role !== 'admin') {
+    if (
+      session.patientId.toString() !== userId &&
+      req.user.role !== 'admin'
+    ) {
       return res.status(403).json({
         success: false,
-        message: 'Unauthorized to cancel this session',
+        message: 'Unauthorized to cancel this session'
       });
     }
 
-    if (session.status === 'Completed' || session.status === 'Cancelled') {
+    if (
+      session.status === 'Completed' ||
+      session.status === 'Cancelled'
+    ) {
       return res.status(400).json({
         success: false,
-        message: 'Session cannot be cancelled',
+        message: 'Session cannot be cancelled'
       });
     }
 
@@ -221,13 +266,13 @@ exports.cancelSession = async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Session cancelled successfully',
+      message: 'Session cancelled successfully'
     });
   } catch (error) {
     console.error('Cancel session error:', error);
     res.status(500).json({
       success: false,
-      message: error.message,
+      message: error.message
     });
   }
 };
@@ -243,21 +288,21 @@ exports.rateSession = async (req, res) => {
     if (!session) {
       return res.status(404).json({
         success: false,
-        message: 'Session not found',
+        message: 'Session not found'
       });
     }
 
     if (session.patientId.toString() !== userId) {
       return res.status(403).json({
         success: false,
-        message: 'Unauthorized to rate this session',
+        message: 'Unauthorized to rate this session'
       });
     }
 
     if (session.status !== 'Completed') {
       return res.status(400).json({
         success: false,
-        message: 'Session must be completed to rate',
+        message: 'Session must be completed to rate'
       });
     }
 
@@ -271,13 +316,13 @@ exports.rateSession = async (req, res) => {
       data: {
         rating: session.patientRating,
         feedback: session.patientFeedback,
-      },
+      }
     });
   } catch (error) {
     console.error('Rate session error:', error);
     res.status(500).json({
       success: false,
-      message: error.message,
+      message: error.message
     });
   }
 };
@@ -285,18 +330,18 @@ exports.rateSession = async (req, res) => {
 // ─── Search therapists ─────────────────────────────────────────
 exports.searchTherapists = async (req, res) => {
   try {
-    const { specialization, diagnosis, language, type, available } = req.query;
+    const { specialization, diagnosis, language, available } = req.query;
 
     console.log('🔍 Searching therapists with:', { specialization, diagnosis });
 
-    let query = { 
+    let query = {
       status: 'active',
       isActive: true,
     };
 
     const searchTerm = specialization || diagnosis;
     if (searchTerm) {
-      query.specializations = { 
+      query.specializations = {
         $in: [new RegExp(searchTerm, 'i')]
       };
     }
@@ -321,7 +366,7 @@ exports.searchTherapists = async (req, res) => {
     console.error('Search therapists error:', error);
     res.status(500).json({
       success: false,
-      message: error.message,
+      message: error.message
     });
   }
 };
@@ -336,13 +381,28 @@ exports.getAvailability = async (req, res) => {
     if (!psychiatrist) {
       return res.status(404).json({
         success: false,
-        message: 'Psychiatrist not found',
+        message: 'Psychiatrist not found'
       });
     }
 
     const availability = {};
     const today = new Date();
     const workingHours = { start: 9, end: 17 };
+    const sessionDuration = 60; // minutes
+
+    // ✅ Get all booked slots for this psychiatrist
+    const bookedSessions = await Session.find({
+      psychiatristId: id,
+      status: { $in: ['Pending', 'Confirmed'] },
+      dateTime: {
+        $gte: today,
+        $lte: new Date(today.getTime() + days * 24 * 60 * 60 * 1000)
+      }
+    }).select('dateTime');
+
+    const bookedTimes = bookedSessions.map(s =>
+      new Date(s.dateTime).toISOString()
+    );
 
     for (let i = 0; i < Math.min(days, 30); i++) {
       const date = new Date(today);
@@ -350,6 +410,7 @@ exports.getAvailability = async (req, res) => {
       const dateStr = date.toISOString().split('T')[0];
       const dayOfWeek = date.getDay();
 
+      // Skip weekends
       if (dayOfWeek === 0 || dayOfWeek === 6) {
         availability[dateStr] = [];
         continue;
@@ -357,9 +418,23 @@ exports.getAvailability = async (req, res) => {
 
       const slots = [];
       for (let hour = workingHours.start; hour < workingHours.end; hour++) {
-        slots.push(`${String(hour).padStart(2, '0')}:00`);
-        if (hour < workingHours.end - 1) {
-          slots.push(`${String(hour).padStart(2, '0')}:30`);
+        for (const minute of [0, 30]) {
+          if (hour === workingHours.end - 1 && minute === 30) continue;
+
+          const slotTime = new Date(date);
+          slotTime.setHours(hour, minute, 0, 0);
+          const slotIso = slotTime.toISOString();
+
+          // ✅ Check if this slot is already booked
+          const isBooked = bookedTimes.some(booked => {
+            const bookedDate = new Date(booked);
+            const diff = Math.abs(bookedDate.getTime() - slotTime.getTime());
+            return diff < sessionDuration * 60 * 1000;
+          });
+
+          if (!isBooked) {
+            slots.push(`${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`);
+          }
         }
       }
       availability[dateStr] = slots;
@@ -367,18 +442,18 @@ exports.getAvailability = async (req, res) => {
 
     res.json({
       success: true,
-      data: availability,
+      data: availability
     });
   } catch (error) {
     console.error('Get availability error:', error);
     res.status(500).json({
       success: false,
-      message: error.message,
+      message: error.message
     });
   }
 };
 
-// ─── Get psychiatrist profile ─────────────────────────────────
+// ─── Get psychiatrist profile ──────────────────────────────────
 exports.getPsychiatristProfile = async (req, res) => {
   try {
     const { id } = req.params;
@@ -389,19 +464,19 @@ exports.getPsychiatristProfile = async (req, res) => {
     if (!psychiatrist) {
       return res.status(404).json({
         success: false,
-        message: 'Psychiatrist not found',
+        message: 'Psychiatrist not found'
       });
     }
 
     res.json({
       success: true,
-      data: psychiatrist,
+      data: psychiatrist
     });
   } catch (error) {
     console.error('Get psychiatrist profile error:', error);
     res.status(500).json({
       success: false,
-      message: error.message,
+      message: error.message
     });
   }
 };

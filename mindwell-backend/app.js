@@ -14,93 +14,98 @@ const sessionRoutes = require('./src/routes/session.routes');
 const paymentRoutes = require('./src/routes/payment.routes');
 const adminRoutes = require('./src/routes/admin.routes');
 const recommenderRoutes = require('./src/routes/recommender.routes');
-const psychiatristRoutes = require('./src/routes/psychiatrist.routes'); 
-const twilioRoutes = require('./src/routes/twilio.routes');
-const passwordResetRoutes = require('./src/routes/passwordReset.routes');
+const psychiatristRoutes = require('./src/routes/psychiatrist.routes');
 
 const app = express();
 
-// ─── CORS Middleware ──────────────────────────────────────
-app.use(cors());
+// ─── CORS ─────────────────────────────────────────────────────
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 
-// ─── IMPORTANT: Stripe Webhook MUST come BEFORE express.json() ───
-app.use(
-    '/api/payments/webhook',
-    express.raw({ type: 'application/json' })
+// ─── ✅ Stripe Webhook MUST come BEFORE express.json() ────────
+app.post(
+  '/api/payments/webhook',
+  express.raw({ type: 'application/json' }),
+  (req, res, next) => {
+    console.log('🔔 Stripe webhook received');
+    next();
+  },
+  require('./src/controllers/payment.controller').stripeWebhook
 );
 
-// ─── Regular JSON Middleware ──────────────────────────────
+// ─── Regular JSON Middleware ───────────────────────────────────
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ─── Database Connection Check Middleware ──────────────────
+// ─── Database Connection Check ────────────────────────────────
 app.use('/api', (req, res, next) => {
-    if (req.path === '/health') return next();
-    if (mongoose.connection.readyState !== 1) {
-        return res.status(503).json({
-            success: false,
-            message: 'Database not connected. Check MONGO_URI in .env and restart the backend.'
-        });
-    }
-    next();
+  if (req.path === '/health') return next();
+  if (mongoose.connection.readyState !== 1) {
+    return res.status(503).json({
+      success: false,
+      message: 'Database not connected. Check MONGO_URI in .env'
+    });
+  }
+  next();
 });
 
-// ─── Routes ────────────────────────────────────────────────
-// ✅ IMPORTANT: Specific routes BEFORE general routes
-
-// Auth routes
+// ─── Routes ───────────────────────────────────────────────────
+// Auth
 app.use('/api/auth', authRoutes);
 
-// AI routes (recommender before general AI)
+// AI — recommender BEFORE general ai
 app.use('/api/ai/recommender', recommenderRoutes);
 app.use('/api/ai', aiRoutes);
 
-// Mood routes
+// Mood
 app.use('/api/mood', moodRoutes);
 
-// Session routes
+// Sessions
 app.use('/api/sessions', sessionRoutes);
 
-// Payment routes
+// Payments — webhook handled above separately
 app.use('/api/payments', paymentRoutes);
 
-// Admin routes
+// Admin
 app.use('/api/admin', adminRoutes);
-// Psychiatrist routes
+
+// Psychiatrist
 app.use('/api/psychiatrist', psychiatristRoutes);
-//Twilio routes
-app.use('/api/twilio', twilioRoutes);
-//password reset routes
-app.use('/api/password-reset', passwordResetRoutes);
 
-// ─── Health Check ──────────────────────────────────────────
+// ─── Health Check ──────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
-    res.status(200).json({
-        success: true,
-        message: 'MindWell API is running',
-        timestamp: new Date().toISOString(),
-        services: {
-            ai: process.env.AI_SERVICE_URL || 'http://localhost:5010',
-            stripe: process.env.STRIPE_SECRET_KEY ? 'configured' : 'not configured'
-        }
-    });
+  res.status(200).json({
+    success: true,
+    message: 'MindWell API is running',
+    timestamp: new Date().toISOString(),
+    database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+    services: {
+      ai: process.env.AI_SERVICE_URL || 'http://localhost:5010',
+      stripe: process.env.STRIPE_SECRET_KEY ? 'configured' : 'not configured',
+      ngrok: 'https://sliver-landslide-coping.ngrok-free.dev'
+    }
+  });
 });
 
-// ─── 404 Handler ────────────────────────────────────────────
+// ─── 404 Handler ──────────────────────────────────────────────
 app.use((req, res) => {
-    res.status(404).json({
-        success: false,
-        message: 'Route not found'
-    });
+  console.log(`❌ Route not found: ${req.method} ${req.path}`);
+  res.status(404).json({
+    success: false,
+    message: 'Route not found'
+  });
 });
 
-// ─── Error Handler ──────────────────────────────────────────
+// ─── Error Handler ─────────────────────────────────────────────
 app.use((err, req, res, next) => {
-    console.error('❌ Error:', err.message);
-    res.status(err.status || 500).json({
-        success: false,
-        message: err.message || 'Internal server error'
-    });
+  console.error('❌ Error:', err.message);
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.message || 'Internal server error'
+  });
 });
 
 module.exports = app;
