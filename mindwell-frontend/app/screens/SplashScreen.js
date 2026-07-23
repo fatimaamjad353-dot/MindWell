@@ -1,6 +1,7 @@
 // app/screens/SplashScreen.js
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function SplashScreen({ navigation }) {
   const fadeAnim = new Animated.Value(0);
@@ -13,9 +14,41 @@ export default function SplashScreen({ navigation }) {
     ]).start();
 
     setTimeout(() => {
-      navigation.replace('Language');
+      checkAppState();
     }, 2500);
   }, []);
+
+  const checkAppState = async () => {
+    try {
+      // Check if language was selected before
+      const savedLanguage = await AsyncStorage.getItem('mindwell_language');
+      // Check if user is already logged in
+      const token = await AsyncStorage.getItem('mindwell_auth_token');
+      // Check user role
+      const userRole = await AsyncStorage.getItem('mindwell_user_role');
+
+      if (token && userRole) {
+        // Already logged in — go straight to dashboard
+        if (userRole === 'psychiatrist') {
+          navigation.replace('PsychologistDashboard');
+        } else if (userRole === 'admin') {
+          navigation.replace('Admin');
+        } else {
+          navigation.replace('PatientDashboard');
+        }
+      } else if (savedLanguage) {
+        // Language selected before but not logged in
+        navigation.replace('Role');
+      } else {
+        // First time — show language screen
+        navigation.replace('Language', { onboarding: true });
+      }
+
+    } catch (error) {
+      console.error('Splash error:', error);
+      navigation.replace('Language', { onboarding: true });
+    }
+  };
 
   return (
     <View style={styles.container}>

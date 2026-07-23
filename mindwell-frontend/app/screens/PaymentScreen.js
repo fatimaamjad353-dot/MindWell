@@ -6,60 +6,15 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  TextInput,
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { bookSessionApi } from '../utils/apiService';
-
-const onlyDigits = (value) => value.replace(/\D/g, '');
-
-const formatCardNumber = (value) =>
-  onlyDigits(value)
-    .slice(0, 19)
-    .replace(/(.{4})/g, '$1 ')
-    .trim();
-
-const formatExpiry = (value) => {
-  const digits = onlyDigits(value).slice(0, 4);
-  return digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits;
-};
-
-const passesLuhnCheck = (number) => {
-  let sum = 0;
-  let doubleDigit = false;
-
-  for (let index = number.length - 1; index >= 0; index -= 1) {
-    let digit = Number(number[index]);
-    if (doubleDigit) {
-      digit *= 2;
-      if (digit > 9) digit -= 9;
-    }
-    sum += digit;
-    doubleDigit = !doubleDigit;
-  }
-
-  return sum % 10 === 0;
-};
-
-const isValidExpiry = (value) => {
-  if (!/^\d{2}\/\d{2}$/.test(value)) return false;
-  const [month, year] = value.split('/').map(Number);
-  if (month < 1 || month > 12) return false;
-
-  const now = new Date();
-  const fullYear = 2000 + year;
-  const expiryEnd = new Date(fullYear, month, 0, 23, 59, 59);
-  return expiryEnd >= now;
-};
+import { useStripe } from '@stripe/stripe-react-native';
+import { bookSessionApi, createPaymentIntentApi, confirmPaymentApi } from '../utils/apiService';
 
 export default function PaymentScreen({ navigation, route }) {
   const { therapist, sessionType, appointmentDate, appointmentTime } = route.params || {};
-  const [cardNumber, setCardNumber] = useState('');
-  const [expiry, setExpiry] = useState('');
-  const [cvv, setCvv] = useState('');
-  const [name, setName] = useState('');
-  const [errors, setErrors] = useState({});
+  const { initPaymentSheet, presentPaymentSheet } = useStripe();
   const [loading, setLoading] = useState(false);
 
   const formattedDate = useMemo(
@@ -77,115 +32,137 @@ export default function PaymentScreen({ navigation, route }) {
 
   const buildAppointmentDateTime = () => {
     if (!appointmentDate || !appointmentTime) return null;
-
     const date = new Date(appointmentDate);
     const [timeValue, meridiem] = appointmentTime.split(' ');
     let [hours, minutes] = timeValue.split(':').map(Number);
-
     if (meridiem === 'PM' && hours !== 12) hours += 12;
     if (meridiem === 'AM' && hours === 12) hours = 0;
-
     date.setHours(hours, minutes, 0, 0);
     return date.toISOString();
   };
 
-  const validate = () => {
-    const nextErrors = {};
-    const cardDigits = onlyDigits(cardNumber);
-    const trimmedName = name.trim();
-
-    if (!/^[A-Za-z][A-Za-z .'-]{2,}$/.test(trimmedName)) {
-      nextErrors.name = 'Enter the cardholder’s full name.';
-    }
-    if (cardDigits.length < 13 || cardDigits.length > 19 || !passesLuhnCheck(cardDigits)) {
-      nextErrors.cardNumber = 'Enter a valid 13–19 digit card number.';
-    }
-    if (!isValidExpiry(expiry)) {
-      nextErrors.expiry = 'Use a valid future date in MM/YY format.';
-    }
-    if (!/^\d{3,4}$/.test(cvv)) {
-      nextErrors.cvv = 'CVV must contain 3 or 4 digits.';
+  const handlePayment = async () => {
+    if (!therapist || !appointmentDate || !appointmentTime) {
+      Alert.alert('Booking incomplete', 'Please go back and select therapist, date and time.');
+      return;
     }
 
-    setErrors(nextErrors);
-    return Object.keys(nextErrors).length === 0;
-  };
+    setLoading(true);
 
-// In PaymentScreen.js - update the booking payload
+    try {
+      // ── STEP 1: Book the session ──────────────────────────
+      const bookingPayload = {
+        psychiatristId: therapist.id,
+        dateTime: buildAppointmentDateTime(),
+        sessionType: sessionType || 'Video',
+        agreedRate: therapist.fee || 2500,
+        notes: 'Booked from MindWell app',
+        bookingSource: 'Manual',
+      };
 
-const handlePayment = async () => {
-  if (!validate()) return;
-  if (!therapist || !appointmentDate || !appointmentTime) {
-    Alert.alert('Booking incomplete', 'Please return and select the therapist, date, and time again.');
-    return;
-  }
+      const booking = await bookSessionApi(bookingPayload);
+      const sessionId = booking?.data?._id || booking?.session?.id;
 
-  setLoading(true);
-  console.log('[PaymentScreen] booking request', {
-    therapist: therapist?.name,
-    appointmentDate,
-    appointmentTime,
-    sessionType,
-  });
+      if (!sessionId) {
+        throw new Error('Session booking failed — no session ID returned');
+      }
 
-  try {
-    // ── Build the session booking payload ──────────────────
-    const bookingPayload = {
-      psychiatristId: therapist.id,
-      dateTime: buildAppointmentDateTime(),
-      sessionType: sessionType || 'video',
-      agreedRate: therapist.fee || 2500,
-      notes: 'Booked from MindWell app',
-      bookingSource: 'Manual', // Use 'Manual' or 'AI_Recommended'
-    };
+      console.log('✅ Session booked:', sessionId);
 
-    console.log('[PaymentScreen] booking payload:', bookingPayload);
+      // ── STEP 2: Create Payment Intent ─────────────────────
+      const paymentIntentResult = await createPaymentIntentApi({ sessionId });
+      const { clientSecret } = paymentIntentResult.data;
 
-    const booking = await bookSessionApi(bookingPayload);
+      console.log('✅ Payment intent created');
 
-    console.log('[PaymentScreen] booking success', booking);
-
-    Alert.alert(
-      'Payment Successful! 🎉',
-      `Your session with ${therapist.name} is booked for ${formattedDate} at ${appointmentTime}.\n\nSession Type: ${sessionType}\nAmount: PKR ${therapist.fee || 2500}\n\nYou can view your sessions in the "My Sessions" tab.`,
-      [
-        {
-          text: 'View Sessions',
-          onPress: () =>
-            navigation.replace('SessionLogs', {
-              recentBookingId: booking?.session?.id || booking?.data?._id,
-            }),
+      // ── STEP 3: Initialize Stripe Payment Sheet ───────────
+      const { error: initError } = await initPaymentSheet({
+        merchantDisplayName: 'MindWell',
+        paymentIntentClientSecret: clientSecret,
+        style: 'alwaysLight',           // ✅ forces light mode — fixes white text issue
+        appearance: {
+          colors: {
+            primary: '#6C63FF',
+            background: '#ffffff',          // ✅ white background
+            componentBackground: '#F8F9FA', // ✅ light grey input background
+            componentText: '#1a1a2e',       // ✅ dark text in inputs
+            componentPlaceholderText: '#999999', // ✅ visible placeholder
+            componentBorder: '#dddddd',
+            primaryText: '#1a1a2e',         // ✅ dark labels
+            secondaryText: '#666666',       // ✅ dark secondary text
+            icon: '#6C63FF',
+            error: '#FF6B6B',
+          },
+          shapes: {
+            borderRadius: 12,
+            borderWidth: 1.5,
+          },
+          primaryButton: {
+            colors: {
+              background: '#6C63FF',
+              text: '#ffffff',
+              border: '#6C63FF',
+            },
+          },
         },
-        {
-          text: 'Back to Home',
-          onPress: () => navigation.replace('PatientDashboard'),
-        },
-      ]
-    );
-  } catch (error) {
-    console.log('[PaymentScreen] booking failed', error.message || error);
-    Alert.alert(
-      'Booking Error',
-      error.message || 'The booking could not be saved. Please try again.'
-    );
-  } finally {
-    setLoading(false);
-  }
-};
-  const clearError = (field) => {
-    if (errors[field]) {
-      setErrors((current) => ({ ...current, [field]: undefined }));
+      });
+
+      if (initError) {
+        throw new Error(initError.message);
+      }
+
+      // ── STEP 4: Present Payment Sheet ─────────────────────
+      const { error: paymentError } = await presentPaymentSheet();
+
+      if (paymentError) {
+        if (paymentError.code === 'Canceled') {
+          Alert.alert(
+            'Payment Cancelled',
+            'You cancelled the payment. Your session is still pending.'
+          );
+          return;
+        }
+        throw new Error(paymentError.message);
+      }
+
+      // ── STEP 5: Confirm on backend ────────────────────────
+      await confirmPaymentApi({
+        paymentIntentId: clientSecret.split('_secret_')[0]
+      });
+
+      console.log('✅ Payment confirmed');
+
+      // ── STEP 6: Success ───────────────────────────────────
+      Alert.alert(
+        'Payment Successful! 🎉',
+        `Your session with ${therapist.name} is booked for ${formattedDate} at ${appointmentTime}.\n\nSession Type: ${sessionType}\nAmount: PKR ${therapist.fee || 2500}`,
+        [
+          {
+            text: 'View Sessions',
+            onPress: () => navigation.replace('SessionLogs', { recentBookingId: sessionId }),
+          },
+          {
+            text: 'Back to Home',
+            onPress: () => navigation.replace('PatientDashboard'),
+          },
+        ]
+      );
+
+    } catch (error) {
+      console.error('❌ Payment error:', error.message);
+      Alert.alert(
+        'Payment Failed',
+        error.message || 'Something went wrong. Please try again.'
+      );
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <ScrollView
-      style={styles.container}
-      keyboardShouldPersistTaps="handled"
-      keyboardDismissMode="on-drag"
-      automaticallyAdjustKeyboardInsets
-      showsVerticalScrollIndicator={false}
-    >
+    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+
+      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.back}>←</Text>
@@ -194,6 +171,7 @@ const handlePayment = async () => {
         <View style={styles.headerSpacer} />
       </View>
 
+      {/* Booking Summary */}
       <View style={styles.summaryCard}>
         <Text style={styles.summaryTitle}>Booking Summary</Text>
         <View style={styles.summaryRow}>
@@ -222,89 +200,27 @@ const handlePayment = async () => {
         </View>
       </View>
 
-      <View style={styles.form}>
-        <Text style={styles.formTitle}>Card Details</Text>
-
-        <Text style={styles.label}>Cardholder Name</Text>
-        <TextInput
-          style={[styles.input, errors.name && styles.inputError]}
-          placeholder="Name exactly as shown on card"
-          placeholderTextColor="#aaa"
-          value={name}
-          onChangeText={(value) => {
-            setName(value);
-            clearError('name');
-          }}
-          autoCapitalize="words"
-          autoCorrect={false}
-        />
-        {errors.name && <Text style={styles.errorText}>{errors.name}</Text>}
-
-        <Text style={styles.label}>Card Number</Text>
-        <TextInput
-          style={[styles.input, errors.cardNumber && styles.inputError]}
-          placeholder="4242 4242 4242 4242"
-          placeholderTextColor="#aaa"
-          value={cardNumber}
-          onChangeText={(value) => {
-            setCardNumber(formatCardNumber(value));
-            clearError('cardNumber');
-          }}
-          keyboardType="number-pad"
-          maxLength={23}
-          autoComplete="cc-number"
-        />
-        {errors.cardNumber && <Text style={styles.errorText}>{errors.cardNumber}</Text>}
-
-        <View style={styles.row}>
-          <View style={styles.half}>
-            <Text style={styles.label}>Expiry Date</Text>
-            <TextInput
-              style={[styles.input, errors.expiry && styles.inputError]}
-              placeholder="MM/YY"
-              placeholderTextColor="#aaa"
-              value={expiry}
-              onChangeText={(value) => {
-                setExpiry(formatExpiry(value));
-                clearError('expiry');
-              }}
-              keyboardType="number-pad"
-              maxLength={5}
-              autoComplete="cc-exp"
-            />
-            {errors.expiry && <Text style={styles.errorText}>{errors.expiry}</Text>}
-          </View>
-          <View style={styles.half}>
-            <Text style={styles.label}>CVV</Text>
-            <TextInput
-              style={[styles.input, errors.cvv && styles.inputError]}
-              placeholder="123"
-              placeholderTextColor="#aaa"
-              value={cvv}
-              onChangeText={(value) => {
-                setCvv(onlyDigits(value).slice(0, 4));
-                clearError('cvv');
-              }}
-              keyboardType="number-pad"
-              maxLength={4}
-              secureTextEntry
-              autoComplete="cc-csc"
-            />
-            {errors.cvv && <Text style={styles.errorText}>{errors.cvv}</Text>}
-          </View>
+      {/* Stripe Security Info */}
+      <View style={styles.stripeInfo}>
+        <Text style={styles.stripeIcon}>🔒</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.stripeTitle}>Secure Payment via Stripe</Text>
+          <Text style={styles.stripeSub}>
+            Your card details are encrypted and never stored on our servers.
+          </Text>
         </View>
-
-        <Text style={styles.testHint}>
-          💳 Test Card: 4242 4242 4242 4242 • Any future expiry • Any CVV
-        </Text>
       </View>
 
-      <View style={styles.secureNote}>
-        <Text style={styles.secureText}>
-          🔒 Demo only—card details are validated locally and are not stored.
-        </Text>
+      {/* Test Card Info */}
+      <View style={styles.testCard}>
+        <Text style={styles.testTitle}>💳 Test Card Details</Text>
+        <Text style={styles.testText}>Card Number: 4242 4242 4242 4242</Text>
+        <Text style={styles.testText}>Expiry: Any future date (e.g. 12/26)</Text>
+        <Text style={styles.testText}>CVV: Any 3 digits (e.g. 123)</Text>
+        <Text style={styles.testText}>ZIP: Any 5 digits (e.g. 42424)</Text>
       </View>
 
+      {/* Pay Button */}
       <TouchableOpacity
         style={[styles.payBtn, loading && styles.payBtnDisabled]}
         onPress={handlePayment}
@@ -313,11 +229,13 @@ const handlePayment = async () => {
         {loading ? (
           <ActivityIndicator color="#fff" />
         ) : (
-          <Text style={styles.payBtnText}>Confirm & Pay PKR {therapist?.fee || 2500} →</Text>
+          <Text style={styles.payBtnText}>
+            Pay PKR {therapist?.fee || 2500} with Stripe →
+          </Text>
         )}
       </TouchableOpacity>
 
-      <View style={styles.bottomSpace} />
+      <View style={{ height: 30 }} />
     </ScrollView>
   );
 }
@@ -342,7 +260,12 @@ const styles = StyleSheet.create({
     padding: 20,
     elevation: 3,
   },
-  summaryTitle: { fontSize: 17, fontWeight: '700', color: '#1a1a2e', marginBottom: 16 },
+  summaryTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#1a1a2e',
+    marginBottom: 16,
+  },
   summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -351,7 +274,12 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f0f0f0',
   },
   summaryLabel: { fontSize: 14, color: '#888' },
-  summaryValue: { fontSize: 14, fontWeight: '600', color: '#333', textTransform: 'capitalize' },
+  summaryValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    textTransform: 'capitalize',
+  },
   summaryValueSmall: {
     flex: 1,
     marginLeft: 20,
@@ -363,26 +291,35 @@ const styles = StyleSheet.create({
   totalRow: { borderBottomWidth: 0, marginTop: 8 },
   totalLabel: { fontSize: 16, fontWeight: '700', color: '#1a1a2e' },
   totalValue: { fontSize: 18, fontWeight: '700', color: '#6C63FF' },
-  form: { marginHorizontal: 16, backgroundColor: '#fff', borderRadius: 16, padding: 20, elevation: 3 },
-  formTitle: { fontSize: 17, fontWeight: '700', color: '#1a1a2e', marginBottom: 10 },
-  label: { fontSize: 14, fontWeight: '500', color: '#333', marginBottom: 6, marginTop: 12 },
-  input: {
-    borderWidth: 1.5,
-    borderColor: '#ddd',
+  stripeInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E8F5E9',
+    marginHorizontal: 16,
     borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 13,
-    fontSize: 15,
-    color: '#333',
-    backgroundColor: '#F8F9FA',
+    padding: 14,
+    marginBottom: 12,
+    gap: 12,
   },
-  inputError: { borderColor: '#E53935', backgroundColor: '#FFF8F8' },
-  errorText: { color: '#E53935', fontSize: 11, marginTop: 5, lineHeight: 15 },
-  row: { flexDirection: 'row', gap: 12 },
-  half: { flex: 1 },
-  testHint: { color: '#6C63FF', fontSize: 11, lineHeight: 16, marginTop: 16, fontWeight: '500' },
-  secureNote: { margin: 16, backgroundColor: '#E8F5E9', borderRadius: 12, padding: 12 },
-  secureText: { color: '#1D9E75', fontSize: 12, textAlign: 'center', fontWeight: '500', lineHeight: 17 },
+  stripeIcon: { fontSize: 24 },
+  stripeTitle: { fontSize: 14, fontWeight: '700', color: '#1D9E75' },
+  stripeSub: { fontSize: 11, color: '#555', marginTop: 2 },
+  testCard: {
+    backgroundColor: '#fff',
+    marginHorizontal: 16,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1.5,
+    borderColor: '#6C63FF',
+  },
+  testTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#6C63FF',
+    marginBottom: 8,
+  },
+  testText: { fontSize: 12, color: '#555', marginBottom: 4 },
   payBtn: {
     backgroundColor: '#6C63FF',
     marginHorizontal: 16,
@@ -393,5 +330,4 @@ const styles = StyleSheet.create({
   },
   payBtnDisabled: { opacity: 0.65 },
   payBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  bottomSpace: { height: 30 },
 });

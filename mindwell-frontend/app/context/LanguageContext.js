@@ -1,29 +1,10 @@
 // app/context/LanguageContext.js
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { translations } from '../utils/translations';
 
 const LanguageContext = createContext();
-
 const LANGUAGE_KEY = 'mindwell_language';
-
-// ─── Translations ──────────────────────────────────────────────────
-const translations = {
-  en: {
-    welcomeDoctor: 'Welcome, Dr.',
-    hello: 'Hello',
-    // ... all your translations
-  },
-  ur: {
-    welcomeDoctor: 'خوش آمدید، ڈاکٹر',
-    hello: 'ہیلو',
-    // ... all your translations
-  },
-  ar: {
-    welcomeDoctor: 'مرحباً دكتور',
-    hello: 'مرحباً',
-    // ... all your translations
-  }
-};
 
 export function LanguageProvider({ children }) {
   const [language, setLanguage] = useState('en');
@@ -55,15 +36,15 @@ export function LanguageProvider({ children }) {
     }
   };
 
-  const t = (key) => {
-    return translations[language]?.[key] || translations.en[key] || key;
-  };
+  // ✅ t is now an OBJECT (translations[language]) not a function
+  // This supports both t.aiCoach AND t('aiCoach') usage across screens
+  const t = translations[language] || translations['en'];
 
   const value = {
     language,
     setLanguage: saveLanguage,
     languageSelected,
-    t,
+    t,           // ✅ object — t.aiCoach works
     isRTL: language === 'ar' || language === 'ur',
   };
 

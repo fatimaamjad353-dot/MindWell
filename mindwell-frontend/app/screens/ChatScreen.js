@@ -11,14 +11,18 @@ import {
   Platform,
   ActivityIndicator,
   Animated,
-  Linking,
+  Alert,
 } from 'react-native';
 import { sendChatMessage } from '../utils/apiService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  ExpoSpeechRecognitionModule,
+  useSpeechRecognitionEvent,
+} from 'expo-speech-recognition';
 
 const AUTH_TOKEN_KEY = 'mindwell_auth_token';
 
-// ─── Diagnosis Card Component ─────────────────────────────────
+// ─── Diagnosis Card ───────────────────────────────────────────
 const DiagnosisCard = ({ data, onBookSession, onDismiss }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -30,14 +34,13 @@ const DiagnosisCard = ({ data, onBookSession, onDismiss }) => {
     }).start();
   }, []);
 
-  const severityLevel = data.severity || 'Moderate';
   const severityColor =
-    severityLevel === 'Severe' ? '#FF6B6B' :
-    severityLevel === 'Moderate' ? '#FFC107' : '#1D9E75';
+    data.severity === 'Severe' ? '#FF6B6B' :
+    data.severity === 'Moderate' ? '#FFC107' : '#1D9E75';
 
   const severityBg =
-    severityLevel === 'Severe' ? '#FFEBEE' :
-    severityLevel === 'Moderate' ? '#FFF9C4' : '#E8F5E9';
+    data.severity === 'Severe' ? '#FFEBEE' :
+    data.severity === 'Moderate' ? '#FFF9C4' : '#E8F5E9';
 
   return (
     <Animated.View style={[styles.diagnosisCard, { opacity: fadeAnim }]}>
@@ -51,34 +54,25 @@ const DiagnosisCard = ({ data, onBookSession, onDismiss }) => {
           <Text style={styles.dismissText}>✕</Text>
         </TouchableOpacity>
       </View>
-
       <View style={styles.diagnosisBody}>
-        <Text style={styles.diagnosisLabel}>{data.label || 'Analysis'}</Text>
+        <Text style={styles.diagnosisLabel}>{data.label}</Text>
         <Text style={styles.diagnosisConfidence}>{data.confidence}% confidence</Text>
       </View>
-
       <View style={[styles.severityBadge, { backgroundColor: severityBg }]}>
         <Text style={[styles.severityText, { color: severityColor }]}>
-          {severityLevel} Severity
+          {data.severity} Severity
         </Text>
       </View>
-
       {data.top3 && data.top3.length > 0 && (
         <View style={styles.top3Row}>
           {data.top3.slice(0, 3).map((item, i) => (
             <View key={i} style={styles.top3Item}>
-              <Text style={styles.top3Name}>
-                {typeof item === 'string' ? item : item.label || item.name || 'Analysis'}
-              </Text>
-              <Text style={styles.top3Conf}>
-                {typeof item === 'string' ? '—' : 
-                  (item.confidence?.toFixed ? item.confidence.toFixed(0) : '—')}%
-              </Text>
+              <Text style={styles.top3Name}>{item.name}</Text>
+              <Text style={styles.top3Conf}>{item.confidence?.toFixed(0)}%</Text>
             </View>
           ))}
         </View>
       )}
-
       <View style={styles.diagnosisActions}>
         <TouchableOpacity style={styles.learnMoreBtn} onPress={onDismiss}>
           <Text style={styles.learnMoreText}>Got it</Text>
@@ -91,25 +85,74 @@ const DiagnosisCard = ({ data, onBookSession, onDismiss }) => {
   );
 };
 
-// ─── Crisis Banner Component ──────────────────────────────────
-const CrisisBanner = ({ onCall }) => (
+// ─── Crisis Banner ────────────────────────────────────────────
+const CrisisBanner = ({ onDismiss }) => (
   <View style={styles.crisisBanner}>
     <Text style={styles.crisisIcon}>🆘</Text>
     <View style={styles.crisisText}>
       <Text style={styles.crisisTitle}>You're not alone</Text>
-      <Text style={styles.crisisSub}>Professional help is available right now</Text>
+      <Text style={styles.crisisSub}>Call: 0317-4288665</Text>
     </View>
-    <TouchableOpacity style={styles.crisisBtn} onPress={onCall}>
-      <Text style={styles.crisisBtnText}>Call Now</Text>
+    <TouchableOpacity style={styles.crisisBtn} onPress={onDismiss}>
+      <Text style={styles.crisisBtnText}>OK</Text>
     </TouchableOpacity>
   </View>
 );
+
+// ─── Voice Button Component ───────────────────────────────────
+const VoiceButton = ({ isListening, onPress, disabled }) => {
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (isListening) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.3,
+            duration: 600,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 600,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    } else {
+      pulseAnim.setValue(1);
+    }
+  }, [isListening]);
+
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      disabled={disabled}
+      style={styles.voiceBtnWrapper}
+    >
+      <Animated.View
+        style={[
+          styles.voiceBtn,
+          isListening && styles.voiceBtnActive,
+          { transform: [{ scale: pulseAnim }] }
+        ]}
+      >
+        <Text style={styles.voiceBtnIcon}>
+          {isListening ? '🔴' : '🎤'}
+        </Text>
+      </Animated.View>
+      {isListening && (
+        <Text style={styles.listeningText}>Listening...</Text>
+      )}
+    </TouchableOpacity>
+  );
+};
 
 export default function ChatScreen({ navigation }) {
   const [messages, setMessages] = useState([
     {
       id: 1,
-      text: "Hi there 👋 I'm MindWell, your personal wellness companion. I'm here to listen and support you. How are you feeling today?",
+      text: "Hi there 👋 I'm MindWell, your personal wellness companion. I'm here to listen and support you. How are you feeling today?\n\nTap 🎤 to speak or type below.",
       sender: 'ai',
       time: 'Just now',
     },
@@ -121,6 +164,12 @@ export default function ChatScreen({ navigation }) {
   const [diagnosisCard, setDiagnosisCard] = useState(null);
   const [showCrisis, setShowCrisis] = useState(false);
   const [shownDiagnoses, setShownDiagnoses] = useState(new Set());
+
+  // ─── Voice recognition state ──────────────────────────────
+  const [isListening, setIsListening] = useState(false);
+  const [voiceLanguage, setVoiceLanguage] = useState('en-US');
+  const [interimText, setInterimText] = useState('');
+
   const scrollRef = useRef();
 
   useEffect(() => {
@@ -131,6 +180,86 @@ export default function ChatScreen({ navigation }) {
     checkLogin();
   }, []);
 
+  // ─── Voice Recognition Events ─────────────────────────────
+  useSpeechRecognitionEvent('start', () => {
+    setIsListening(true);
+    setInterimText('');
+    console.log('🎤 Voice recognition started');
+  });
+
+  useSpeechRecognitionEvent('end', () => {
+    setIsListening(false);
+    setInterimText('');
+    console.log('🎤 Voice recognition ended');
+  });
+
+  useSpeechRecognitionEvent('result', (event) => {
+    const transcript = event.results[0]?.transcript || '';
+    const isFinal = event.results[0]?.confidence > 0;
+
+    if (event.isFinal || isFinal) {
+      // Final result — set as input text
+      setInput(transcript);
+      setInterimText('');
+      console.log('🎤 Final transcript:', transcript);
+    } else {
+      // Interim result — show as preview
+      setInterimText(transcript);
+    }
+  });
+
+  useSpeechRecognitionEvent('error', (event) => {
+    setIsListening(false);
+    setInterimText('');
+    console.error('🎤 Voice error:', event.error);
+
+    if (event.error === 'no-speech') {
+      Alert.alert('No speech detected', 'Please try speaking again.');
+    } else if (event.error === 'not-allowed') {
+      Alert.alert(
+        'Microphone Permission Required',
+        'Please allow microphone access in your phone settings to use voice input.',
+        [{ text: 'OK' }]
+      );
+    }
+  });
+
+  // ─── Start/Stop Voice Recognition ─────────────────────────
+  const toggleVoice = async () => {
+    if (isListening) {
+      await ExpoSpeechRecognitionModule.stop();
+      return;
+    }
+
+    // Request permission first
+    const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+    if (!result.granted) {
+      Alert.alert(
+        'Permission Required',
+        'Microphone permission is needed for voice input. Please enable it in settings.'
+      );
+      return;
+    }
+
+    // Start recognition
+    ExpoSpeechRecognitionModule.start({
+      lang: voiceLanguage,
+      interimResults: true,
+      maxAlternatives: 1,
+      continuous: false,
+    });
+  };
+
+  // ─── Toggle language between English and Urdu ─────────────
+  const toggleLanguage = () => {
+    const newLang = voiceLanguage === 'en-US' ? 'ur-PK' : 'en-US';
+    setVoiceLanguage(newLang);
+    Alert.alert(
+      'Language Changed',
+      newLang === 'ur-PK' ? '🇵🇰 Urdu voice input enabled' : '🇬🇧 English voice input enabled'
+    );
+  };
+
   const quickReplies = [
     "I'm feeling anxious 😰",
     "I'm stressed about work 😤",
@@ -138,7 +267,7 @@ export default function ChatScreen({ navigation }) {
     "I need motivation 💪",
   ];
 
-  // ─── SEND MESSAGE ─────────────────────────────────────────────
+  // ─── Send Message ─────────────────────────────────────────
   const sendMessage = async (text) => {
     const messageText = text || input.trim();
     if (!messageText || loading) return;
@@ -148,16 +277,19 @@ export default function ChatScreen({ navigation }) {
       text: messageText,
       sender: 'user',
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      isVoice: !text && isListening,
     };
     setMessages((prev) => [...prev, userMsg]);
     setInput('');
+    setInterimText('');
     setLoading(true);
     setDiagnosisCard(null);
 
     try {
       const response = await sendChatMessage({
         message: messageText,
-        chatId: chatId || undefined
+        chatId: chatId || undefined,
+        language: voiceLanguage === 'ur-PK' ? 'roman_urdu' : 'english'
       });
 
       const data = response?.data || response;
@@ -167,7 +299,7 @@ export default function ChatScreen({ navigation }) {
       }
 
       const aiText = data.aiResponse ||
-        "I'm here for you. Could you tell me more about what's on your mind? 💙";
+        "I'm here for you. Could you tell me more? 💙";
 
       const aiMsg = {
         id: Date.now() + 1,
@@ -182,54 +314,35 @@ export default function ChatScreen({ navigation }) {
         setShowCrisis(true);
       }
 
-      // ─── Show diagnosis card ─────────────────────────────────
-      if (data.showDiagnosisCard && data.diagnosisCardData) {
-        const cardData = data.diagnosisCardData;
+      const diagnosis = data.diagnosis;
+      if (
+        diagnosis?.needsHelp &&
+        diagnosis?.label &&
+        diagnosis.label !== 'No issue detected' &&
+        !shownDiagnoses.has(diagnosis.label) &&
+        diagnosis.confidence > 70
+      ) {
         setDiagnosisCard({
-          label: cardData.label || 'Pattern Detected',
-          confidence: cardData.confidence || '70',
-          severity: cardData.severity || 'Moderate',
-          top3: cardData.top3 || [],
+          label: diagnosis.label,
+          confidence: diagnosis.confidence?.toFixed(1),
+          severity: diagnosis.severityLabel || diagnosis.severity,
+          top3: diagnosis.top3 || []
         });
-      } else if (data.diagnosis?.needsHelp && data.diagnosis?.label !== 'No issue detected') {
-        const diag = data.diagnosis;
-        if (diag.confidence > 70 && !shownDiagnoses.has(diag.label)) {
-          setDiagnosisCard({
-            label: diag.label,
-            confidence: diag.confidence?.toFixed(1) || '70',
-            severity: diag.severityLabel || 'Moderate',
-            top3: diag.top3 || [],
-          });
-          setShownDiagnoses(prev => new Set([...prev, diag.label]));
-        }
+        setShownDiagnoses(prev => new Set([...prev, diagnosis.label]));
       }
 
     } catch (error) {
       console.error('❌ Chat error:', error.message);
-      let errorMessage = "I'm having a moment of trouble. Please try again 💙";
-      if (error.message?.includes('401') || error.message?.includes('403')) {
-        errorMessage = "Your session has expired. Please log in again 🔐";
-      } else if (error.message?.includes('Network')) {
-        errorMessage = "I can't reach my servers right now. Please check your connection 🔌";
-      }
-
       setMessages((prev) => [...prev, {
         id: Date.now() + 1,
-        text: errorMessage,
+        text: "I'm having trouble connecting. Please try again 💙",
         sender: 'ai',
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       }]);
-
     } finally {
       setLoading(false);
-      setTimeout(() => {
-        scrollRef.current?.scrollToEnd({ animated: true });
-      }, 150);
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 150);
     }
-  };
-
-  const handleCall = () => {
-    Linking.openURL('tel:03174288665');
   };
 
   return (
@@ -237,7 +350,7 @@ export default function ChatScreen({ navigation }) {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      {/* ─── Header ─────────────────────────────────────────── */}
+      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.back}>←</Text>
@@ -248,15 +361,20 @@ export default function ChatScreen({ navigation }) {
             {isLoggedIn ? '● Online' : '● Offline'}
           </Text>
         </View>
-        <View style={{ width: 30 }} />
+        {/* Language toggle button */}
+        <TouchableOpacity onPress={toggleLanguage} style={styles.langBtn}>
+          <Text style={styles.langBtnText}>
+            {voiceLanguage === 'en-US' ? '🇬🇧' : '🇵🇰'}
+          </Text>
+        </TouchableOpacity>
       </View>
 
-      {/* ─── Crisis Banner ───────────────────────────────────── */}
+      {/* Crisis Banner */}
       {showCrisis && (
-        <CrisisBanner onCall={handleCall} />
+        <CrisisBanner onDismiss={() => setShowCrisis(false)} />
       )}
 
-      {/* ─── Messages ────────────────────────────────────────── */}
+      {/* Messages */}
       <ScrollView
         ref={scrollRef}
         style={styles.messages}
@@ -274,18 +392,18 @@ export default function ChatScreen({ navigation }) {
           >
             {msg.sender === 'ai' && <Text style={styles.aiAvatar}>🤖</Text>}
             <View style={styles.bubbleWrapper}>
-              <View
-                style={[
-                  styles.bubbleContent,
-                  msg.sender === 'user' ? styles.userContent : styles.aiContent,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.messageText,
-                    msg.sender === 'user' ? styles.userText : styles.aiText,
-                  ]}
-                >
+              <View style={[
+                styles.bubbleContent,
+                msg.sender === 'user' ? styles.userContent : styles.aiContent,
+              ]}>
+                {/* Show mic icon if sent via voice */}
+                {msg.isVoice && (
+                  <Text style={styles.voiceIndicator}>🎤 </Text>
+                )}
+                <Text style={[
+                  styles.messageText,
+                  msg.sender === 'user' ? styles.userText : styles.aiText,
+                ]}>
                   {msg.text}
                 </Text>
               </View>
@@ -299,7 +417,15 @@ export default function ChatScreen({ navigation }) {
           </View>
         ))}
 
-        {/* ─── Typing Indicator ──────────────────────────────── */}
+        {/* Interim voice text preview */}
+        {interimText ? (
+          <View style={styles.interimBubble}>
+            <Text style={styles.interimIcon}>🎤</Text>
+            <Text style={styles.interimText}>{interimText}...</Text>
+          </View>
+        ) : null}
+
+        {/* Typing indicator */}
         {loading && (
           <View style={styles.aiBubble}>
             <Text style={styles.aiAvatar}>🤖</Text>
@@ -310,7 +436,7 @@ export default function ChatScreen({ navigation }) {
           </View>
         )}
 
-        {/* ─── Diagnosis Card ────────────────────────────────── */}
+        {/* Diagnosis Card */}
         {diagnosisCard && (
           <DiagnosisCard
             data={diagnosisCard}
@@ -323,7 +449,7 @@ export default function ChatScreen({ navigation }) {
         )}
       </ScrollView>
 
-      {/* ─── Quick Replies ───────────────────────────────────── */}
+      {/* Quick Replies */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -343,20 +469,38 @@ export default function ChatScreen({ navigation }) {
         ))}
       </ScrollView>
 
-      {/* ─── Input Box ───────────────────────────────────────── */}
+      {/* Input Box with Voice Button */}
       <View style={styles.inputBox}>
+        {/* Voice Button */}
+        <VoiceButton
+          isListening={isListening}
+          onPress={toggleVoice}
+          disabled={loading}
+        />
+
+        {/* Text Input */}
         <TextInput
           style={styles.input}
-          placeholder="Type how you feel..."
-          placeholderTextColor="#aaa"
-          value={input}
+          placeholder={
+            isListening
+              ? 'Listening...'
+              : voiceLanguage === 'ur-PK'
+                ? 'لکھیں یا بولیں...'
+                : 'Type or speak...'
+          }
+          placeholderTextColor={isListening ? '#6C63FF' : '#aaa'}
+          value={isListening ? interimText : input}
           onChangeText={setInput}
           multiline
-          editable={!loading}
-          onSubmitEditing={() => sendMessage()}
+          editable={!loading && !isListening}
         />
+
+        {/* Send Button */}
         <TouchableOpacity
-          style={[styles.sendBtn, (!input.trim() || loading) && styles.sendBtnDisabled]}
+          style={[
+            styles.sendBtn,
+            (!input.trim() || loading) && styles.sendBtnDisabled
+          ]}
           onPress={() => sendMessage()}
           disabled={!input.trim() || loading}
         >
@@ -380,11 +524,20 @@ const styles = StyleSheet.create({
     paddingTop: 50,
   },
   back: { fontSize: 24, color: '#fff', fontWeight: '700' },
-  headerInfo: { alignItems: 'center' },
+  headerInfo: { alignItems: 'center', flex: 1 },
   headerTitle: { fontSize: 18, fontWeight: '700', color: '#fff' },
   headerStatus: { fontSize: 12, marginTop: 2 },
   online: { color: '#90EE90' },
   offline: { color: '#FF6B6B' },
+  langBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  langBtnText: { fontSize: 20 },
 
   // Crisis Banner
   crisisBanner: {
@@ -419,21 +572,29 @@ const styles = StyleSheet.create({
   aiAvatar: { fontSize: 24, marginRight: 8, marginBottom: 16 },
   bubbleWrapper: { maxWidth: '75%' },
   bubbleContent: { borderRadius: 16, padding: 12 },
-  userContent: {
-    backgroundColor: '#6C63FF',
-    borderBottomRightRadius: 4,
-  },
-  aiContent: {
-    backgroundColor: '#fff',
-    borderBottomLeftRadius: 4,
-    elevation: 2,
-  },
+  userContent: { backgroundColor: '#6C63FF', borderBottomRightRadius: 4 },
+  aiContent: { backgroundColor: '#fff', borderBottomLeftRadius: 4, elevation: 2 },
   messageText: { fontSize: 15, lineHeight: 22 },
   userText: { color: '#fff' },
   aiText: { color: '#333' },
+  voiceIndicator: { fontSize: 12 },
   timeText: { fontSize: 10, color: '#aaa', marginTop: 4 },
   timeRight: { textAlign: 'right' },
   timeLeft: { textAlign: 'left' },
+
+  // Interim voice preview
+  interimBubble: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EEF',
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#6C63FF',
+  },
+  interimIcon: { fontSize: 16, marginRight: 6 },
+  interimText: { color: '#6C63FF', fontSize: 14, fontStyle: 'italic', flex: 1 },
 
   // Typing
   typingBubble: {
@@ -484,11 +645,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   severityText: { fontSize: 12, fontWeight: '700' },
-  top3Row: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 14,
-  },
+  top3Row: { flexDirection: 'row', gap: 8, marginBottom: 14 },
   top3Item: {
     flex: 1,
     backgroundColor: '#F0EFFF',
@@ -530,26 +687,47 @@ const styles = StyleSheet.create({
   },
   quickReplyText: { color: '#6C63FF', fontSize: 13, fontWeight: '500' },
 
-  // Input
+  // Input Box
   inputBox: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#fff',
     margin: 12,
     borderRadius: 25,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
     elevation: 3,
   },
-  input: { flex: 1, fontSize: 15, color: '#333', maxHeight: 80 },
-  sendBtn: {
-    backgroundColor: '#6C63FF',
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+
+  // Voice Button
+  voiceBtnWrapper: { alignItems: 'center', marginRight: 4 },
+  voiceBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#F0EFFF',
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 8,
+    borderWidth: 1.5,
+    borderColor: '#6C63FF',
+  },
+  voiceBtnActive: {
+    backgroundColor: '#FFEBEE',
+    borderColor: '#FF6B6B',
+  },
+  voiceBtnIcon: { fontSize: 18 },
+  listeningText: { fontSize: 8, color: '#FF6B6B', fontWeight: '600', marginTop: 2 },
+
+  // Text Input
+  input: { flex: 1, fontSize: 15, color: '#333', maxHeight: 80, paddingHorizontal: 8 },
+  sendBtn: {
+    backgroundColor: '#6C63FF',
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 4,
   },
   sendBtnDisabled: { opacity: 0.4 },
   sendText: { color: '#fff', fontSize: 16 },

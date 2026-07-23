@@ -6,7 +6,6 @@ import { useLanguage } from '../context/LanguageContext';
 const languages = [
   { code: 'en', name: 'English', native: 'English', flag: '🇬🇧', rtl: false },
   { code: 'ur', name: 'Urdu', native: 'اردو', flag: '🇵🇰', rtl: true },
-  // { code: 'de', name: 'German', native: 'Deutsch', flag: '🇩🇪', rtl: false }, // ← Remove this line
   { code: 'ar', name: 'Arabic', native: 'العربية', flag: '🇸🇦', rtl: true },
 ];
 

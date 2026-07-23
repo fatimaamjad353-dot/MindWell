@@ -15,7 +15,7 @@ export default function SettingsScreen({ navigation, route }) {
     }, [user])
   );
 
-  const langFlag = { en: '🇬🇧', ur: '🇵🇰', de: '🇩🇪', ar: '🇸🇦' };
+  const langFlag = { en: '🇬🇧', ur: '🇵🇰', ar: '🇸🇦' };
 
   const settingsItems = [
     { emoji: '👤', title: t.profile, subtitle: profile?.email || 'Update your info', action: () => navigation.navigate('Profile', { user: profile }) },

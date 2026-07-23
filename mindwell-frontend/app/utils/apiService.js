@@ -533,3 +533,18 @@ export const resetPassword = (payload) => request({
   body: payload,
   auth: false
 });
+export const createPaymentIntentApi = (payload) => request({
+  path: '/payments/create-intent',
+  method: 'POST',
+  body: payload
+});
+
+export const confirmPaymentApi = (payload) => request({
+  path: '/payments/confirm',
+  method: 'POST',
+  body: payload
+});
+
+export const getMyPaymentsApi = () => request({
+  path: '/payments/my-payments'
+});
