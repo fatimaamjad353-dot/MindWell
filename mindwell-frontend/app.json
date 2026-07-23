@@ -1,27 +1,60 @@
 {
   "expo": {
-    "name": "MindWell",
+    "name": "mindwell-frontend",
     "slug": "mindwell-frontend",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "assetBundlePatterns": [
-      "**/*"
-    ],
-    "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.mindwell.app"
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#6C63FF"
     },
+    "plugins": [
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.com.mindwell",
+          "enableGooglePay": false
+        }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow MindWell to use your microphone for voice input",
+          "speechRecognitionPermission": "Allow MindWell to recognize your speech"
+        }
+      ]
+    ],
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#6C63FF"
       },
-      "package": "com.mindwell.app"
+      "package": "com.mindwell.app",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.INTERNET",
+        "android.permission.CAMERA",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mindwell.app",
+      "infoPlist": {
+        "NSSpeechRecognitionUsageDescription": "Allow MindWell to recognize your speech",
+        "NSMicrophoneUsageDescription": "Allow MindWell to use your microphone for voice input"
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "ea36972a-dba3-4abb-b7ac-0ad1b22310fa"
+      }
     }
   }
 }
