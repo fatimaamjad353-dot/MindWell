@@ -5,17 +5,9 @@ const Patient = require('../models/Patient');
 const Psychiatrist = require('../models/Psychiatrist');
 const emailService = require('../services/email.service');
 
-// ─── Generate reset token ──────────────────────────────────────────
-const generateResetToken = () => {
-    return crypto.randomBytes(32).toString('hex');
-};
-
-// ─── Send password reset email ─────────────────────────────────────
-const sendResetEmail = async (email, resetToken, role) => {
-    // ─── Simple web link (no deep linking) ─────────────────────
-    const resetLink = `http://192.168.10.6:8081/reset-password?token=${resetToken}&role=${role}`;
-    
-    const subject = 'MindWell - Password Reset Request';
+// ─── Send password reset OTP email ───────────────────────────
+const sendResetOTPEmail = async (email, otp) => {
+    const subject = 'MindWell - Password Reset OTP';
     const html = `
         <!DOCTYPE html>
         <html>
@@ -24,10 +16,9 @@ const sendResetEmail = async (email, resetToken, role) => {
                 body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
                 .header { background: #6C63FF; color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0; }
                 .content { padding: 30px; background: #f9f9f9; border-radius: 0 0 10px 10px; }
-                .button { display: inline-block; background: #6C63FF; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
-                .footer { text-align: center; color: #888; font-size: 12px; margin-top: 20px; }
+                .otp-code { font-size: 36px; font-weight: bold; color: #6C63FF; text-align: center; letter-spacing: 10px; padding: 20px; background: #F0EFFF; border-radius: 10px; margin: 20px 0; }
                 .warning { background: #FFF3CD; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #FFC107; }
-                .link-box { background: #f0f0f0; padding: 10px; border-radius: 5px; word-break: break-all; font-size: 12px; margin: 10px 0; }
+                .footer { text-align: center; color: #888; font-size: 12px; margin-top: 20px; }
             </style>
         </head>
         <body>
@@ -37,24 +28,13 @@ const sendResetEmail = async (email, resetToken, role) => {
             </div>
             <div class="content">
                 <h2>Hello,</h2>
-                <p>We received a request to reset your password for your MindWell account.</p>
-                
-                <p>Click the button below to reset your password:</p>
-                <div style="text-align: center;">
-                    <a href="${resetLink}" class="button">Reset Password</a>
-                </div>
-                
+                <p>We received a request to reset your MindWell password.</p>
+                <p>Your password reset OTP is:</p>
+                <div class="otp-code">${otp}</div>
                 <div class="warning">
-                    <p><strong>⚠️ This link will expire in 1 hour.</strong></p>
-                    <p>If you didn't request this, you can safely ignore this email.</p>
+                    <p><strong>⚠️ This OTP expires in 10 minutes.</strong></p>
+                    <p>If you didn't request this, please ignore this email.</p>
                 </div>
-                
-                <p>Or copy and paste this link into your browser:</p>
-                <div class="link-box">${resetLink}</div>
-                
-                <p style="font-size: 12px; color: #888; margin-top: 20px;">
-                    If you're having trouble, please contact support at support@mindwell.com
-                </p>
             </div>
             <div class="footer">
                 <p>MindWell - Your Mental Wellness Platform</p>
@@ -64,12 +44,11 @@ const sendResetEmail = async (email, resetToken, role) => {
         </html>
     `;
 
-    console.log('📧 Sending password reset email to:', email);
-    console.log('🔗 Reset Link:', resetLink);
+    console.log('📧 Sending password reset OTP to:', email);
     await emailService.sendEmail(email, subject, html);
 };
 
-// ─── Request password reset ────────────────────────────────────────
+// ─── Request password reset ────────────────────────────────────
 const requestPasswordReset = async (req, res) => {
     try {
         const { email, role } = req.body;
@@ -83,48 +62,47 @@ const requestPasswordReset = async (req, res) => {
             });
         }
 
-        if (!role || !['patient', 'psychologist'].includes(role)) {
-            return res.status(400).json({
-                success: false,
-                message: 'Please specify a valid role (patient or psychologist)'
-            });
-        }
-
         const normalizedEmail = email.trim().toLowerCase();
 
-        // Find user by email and role
+        // ✅ Find user — they MUST exist for password reset
         let user;
-        if (role === 'patient') {
-            user = await Patient.findOne({ email: normalizedEmail });
-        } else {
+        if (role === 'psychiatrist' || role === 'psychologist') {
             user = await Psychiatrist.findOne({ email: normalizedEmail });
+        } else {
+            user = await Patient.findOne({ email: normalizedEmail });
         }
 
         if (!user) {
-            // Don't reveal if email exists or not for security
+            // Don't reveal if email exists for security
             return res.status(200).json({
                 success: true,
-                message: 'If an account exists with this email, you will receive a reset link.'
+                message: 'If an account exists with this email, you will receive a reset OTP.'
             });
         }
 
-        // Generate reset token
-        const resetToken = generateResetToken();
-        const resetExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+        // Generate 6-digit OTP
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-        // Save token to user
-        user.resetPasswordToken = resetToken;
-        user.resetPasswordExpires = resetExpiry;
+        // Save OTP to user
+        user.resetPasswordToken = otp;
+        user.resetPasswordExpires = otpExpiry;
         await user.save();
 
-        // Send email
-        await sendResetEmail(normalizedEmail, resetToken, role);
-
-        console.log(`✅ Password reset email sent to: ${normalizedEmail} (${role})`);
+        // Send OTP email
+        try {
+            await sendResetOTPEmail(normalizedEmail, otp);
+            console.log(`✅ Reset OTP sent to: ${normalizedEmail}`);
+        } catch (emailError) {
+            console.error('❌ Email send error:', emailError.message);
+            // Still return success — OTP saved in DB
+        }
 
         res.status(200).json({
             success: true,
-            message: 'If an account exists with this email, you will receive a reset link.'
+            message: `Password reset OTP sent to ${normalizedEmail}`,
+            // ⚠️ Remove in production
+            debug: { otp }
         });
 
     } catch (error) {
@@ -136,30 +114,33 @@ const requestPasswordReset = async (req, res) => {
     }
 };
 
-// ─── Verify reset token ────────────────────────────────────────────
-const verifyResetToken = async (req, res) => {
+// ─── Verify reset OTP ──────────────────────────────────────────
+const verifyResetOTP = async (req, res) => {
     try {
-        const { token, role } = req.query;
+        const { email, otp, role } = req.body;
 
-        console.log('🔍 Verifying reset token:', token, 'role:', role);
+        console.log('🔍 Verifying reset OTP for:', email);
 
-        if (!token || !role) {
+        if (!email || !otp) {
             return res.status(400).json({
                 success: false,
-                message: 'Invalid reset link'
+                message: 'Email and OTP are required'
             });
         }
 
-        // Find user by token
+        const normalizedEmail = email.trim().toLowerCase();
+
         let user;
-        if (role === 'patient') {
-            user = await Patient.findOne({
-                resetPasswordToken: token,
+        if (role === 'psychiatrist' || role === 'psychologist') {
+            user = await Psychiatrist.findOne({
+                email: normalizedEmail,
+                resetPasswordToken: otp,
                 resetPasswordExpires: { $gt: new Date() }
             });
         } else {
-            user = await Psychiatrist.findOne({
-                resetPasswordToken: token,
+            user = await Patient.findOne({
+                email: normalizedEmail,
+                resetPasswordToken: otp,
                 resetPasswordExpires: { $gt: new Date() }
             });
         }
@@ -167,21 +148,18 @@ const verifyResetToken = async (req, res) => {
         if (!user) {
             return res.status(400).json({
                 success: false,
-                message: 'Invalid or expired reset link. Please request a new one.'
+                message: 'Invalid or expired OTP. Please request a new one.'
             });
         }
 
         res.status(200).json({
             success: true,
-            message: 'Token is valid',
-            data: {
-                email: user.email,
-                role: role
-            }
+            message: 'OTP verified successfully',
+            data: { email: normalizedEmail, role }
         });
 
     } catch (error) {
-        console.error('Verify reset token error:', error);
+        console.error('Verify reset OTP error:', error);
         res.status(500).json({
             success: false,
             message: error.message
@@ -189,37 +167,40 @@ const verifyResetToken = async (req, res) => {
     }
 };
 
-// ─── Reset password ────────────────────────────────────────────────
+// ─── Reset password ────────────────────────────────────────────
 const resetPassword = async (req, res) => {
     try {
-        const { token, role, newPassword } = req.body;
+        const { email, otp, newPassword, role } = req.body;
 
-        console.log('🔐 Resetting password for token:', token);
+        console.log('🔐 Resetting password for:', email);
 
-        if (!token || !role || !newPassword) {
+        if (!email || !otp || !newPassword) {
             return res.status(400).json({
                 success: false,
-                message: 'Please provide token, role, and new password'
+                message: 'Email, OTP and new password are required'
             });
         }
 
         if (newPassword.length < 6) {
             return res.status(400).json({
                 success: false,
-                message: 'Password must be at least 6 characters long'
+                message: 'Password must be at least 6 characters'
             });
         }
 
-        // Find user by token
+        const normalizedEmail = email.trim().toLowerCase();
+
         let user;
-        if (role === 'patient') {
-            user = await Patient.findOne({
-                resetPasswordToken: token,
+        if (role === 'psychiatrist' || role === 'psychologist') {
+            user = await Psychiatrist.findOne({
+                email: normalizedEmail,
+                resetPasswordToken: otp,
                 resetPasswordExpires: { $gt: new Date() }
             });
         } else {
-            user = await Psychiatrist.findOne({
-                resetPasswordToken: token,
+            user = await Patient.findOne({
+                email: normalizedEmail,
+                resetPasswordToken: otp,
                 resetPasswordExpires: { $gt: new Date() }
             });
         }
@@ -227,25 +208,22 @@ const resetPassword = async (req, res) => {
         if (!user) {
             return res.status(400).json({
                 success: false,
-                message: 'Invalid or expired reset link. Please request a new one.'
+                message: 'Invalid or expired OTP. Please request a new one.'
             });
         }
 
         // Hash new password
         const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(newPassword, salt);
-
-        // Update password and clear reset fields
-        user.password = hashedPassword;
+        user.password = await bcrypt.hash(newPassword, salt);
         user.resetPasswordToken = null;
         user.resetPasswordExpires = null;
         await user.save();
 
-        console.log(`✅ Password reset successful for: ${user.email} (${role})`);
+        console.log(`✅ Password reset successful for: ${normalizedEmail}`);
 
         res.status(200).json({
             success: true,
-            message: 'Password reset successful! You can now login with your new password.'
+            message: 'Password reset successfully. Please login with your new password.'
         });
 
     } catch (error) {
@@ -257,9 +235,8 @@ const resetPassword = async (req, res) => {
     }
 };
 
-// ─── EXPORT ALL FUNCTIONS ──────────────────────────────────────────
 module.exports = {
     requestPasswordReset,
-    verifyResetToken,
+    verifyResetOTP,
     resetPassword
 };

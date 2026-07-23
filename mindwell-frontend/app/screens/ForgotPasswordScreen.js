@@ -18,29 +18,35 @@ export default function ForgotPasswordScreen({ navigation, route }) {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  // ─── Step 1: Send OTP ──────────────────────────────────────
+  // ─── Step 1: Send OTP to email ────────────────────────────
   const handleSendOTP = async () => {
     if (!email.trim()) {
       Alert.alert('Required', 'Please enter your email address');
       return;
     }
 
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address');
+      return;
+    }
+
     setLoading(true);
     try {
-      await request({
-        path: '/auth/send-otp',
+      const result = await request({
+        path: '/password-reset/request', // ✅ correct route
         method: 'POST',
-        body: { email: email.trim(), role }
+        body: { email: email.trim().toLowerCase(), role }
       });
 
       Alert.alert(
         '✅ OTP Sent',
-        `A verification code has been sent to ${email}`
+        `A 6-digit reset code has been sent to ${email}. Please check your inbox.`
       );
       setStep(2);
 
     } catch (error) {
-      Alert.alert('Error', error.message || 'Could not send OTP');
+      Alert.alert('Error', error.message || 'Could not send reset OTP');
     } finally {
       setLoading(false);
     }
@@ -49,22 +55,27 @@ export default function ForgotPasswordScreen({ navigation, route }) {
   // ─── Step 2: Verify OTP ────────────────────────────────────
   const handleVerifyOTP = async () => {
     if (!otp.trim()) {
-      Alert.alert('Required', 'Please enter the OTP');
+      Alert.alert('Required', 'Please enter the OTP from your email');
+      return;
+    }
+
+    if (otp.length !== 6) {
+      Alert.alert('Invalid OTP', 'OTP must be 6 digits');
       return;
     }
 
     setLoading(true);
     try {
       await request({
-        path: '/auth/verify-otp',
+        path: '/password-reset/verify-otp', // ✅ correct route
         method: 'POST',
-        body: { email: email.trim(), otp: otp.trim(), role }
+        body: { email: email.trim().toLowerCase(), otp: otp.trim(), role }
       });
 
       setStep(3);
 
     } catch (error) {
-      Alert.alert('Invalid OTP', error.message || 'OTP verification failed');
+      Alert.alert('Invalid OTP', error.message || 'OTP verification failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -88,10 +99,10 @@ export default function ForgotPasswordScreen({ navigation, route }) {
     setLoading(true);
     try {
       await request({
-        path: '/auth/reset-password',
+        path: '/password-reset/reset', // ✅ correct route
         method: 'POST',
         body: {
-          email: email.trim(),
+          email: email.trim().toLowerCase(),
           otp: otp.trim(),
           newPassword,
           role
@@ -99,13 +110,13 @@ export default function ForgotPasswordScreen({ navigation, route }) {
       });
 
       Alert.alert(
-        '✅ Password Reset',
-        'Your password has been reset successfully. Please login with your new password.',
-        [{ text: 'Login', onPress: () => navigation.replace('Login', { role }) }]
+        '✅ Password Reset Successful',
+        'Your password has been reset. Please login with your new password.',
+        [{ text: 'Login Now', onPress: () => navigation.replace('Login', { role }) }]
       );
 
     } catch (error) {
-      Alert.alert('Error', error.message || 'Could not reset password');
+      Alert.alert('Error', error.message || 'Could not reset password. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -118,9 +129,9 @@ export default function ForgotPasswordScreen({ navigation, route }) {
   };
 
   const getStepSubtitle = () => {
-    if (step === 1) return 'Enter your email to receive a verification code';
-    if (step === 2) return `Enter the OTP sent to ${email}`;
-    return 'Create a new secure password';
+    if (step === 1) return 'Enter your email to receive a 6-digit reset code';
+    if (step === 2) return `Enter the 6-digit OTP sent to ${email}`;
+    return 'Create a strong new password';
   };
 
   return (
@@ -181,7 +192,7 @@ export default function ForgotPasswordScreen({ navigation, route }) {
                 <Text style={styles.inputIcon}>📧</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="Enter your email"
+                  placeholder="Enter your registered email"
                   placeholderTextColor="#aaa"
                   value={email}
                   onChangeText={setEmail}
@@ -200,7 +211,7 @@ export default function ForgotPasswordScreen({ navigation, route }) {
                 {loading ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={styles.btnText}>Send OTP →</Text>
+                  <Text style={styles.btnText}>Send Reset OTP →</Text>
                 )}
               </TouchableOpacity>
             </>
@@ -209,12 +220,12 @@ export default function ForgotPasswordScreen({ navigation, route }) {
           {/* Step 2 — OTP */}
           {step === 2 && (
             <>
-              <Text style={styles.inputLabel}>Verification Code</Text>
+              <Text style={styles.inputLabel}>6-Digit OTP</Text>
               <View style={styles.inputBox}>
                 <Text style={styles.inputIcon}>🔢</Text>
                 <TextInput
                   style={[styles.input, styles.otpInput]}
-                  placeholder="Enter 6-digit OTP"
+                  placeholder="Enter OTP from email"
                   placeholderTextColor="#aaa"
                   value={otp}
                   onChangeText={setOtp}
@@ -241,7 +252,7 @@ export default function ForgotPasswordScreen({ navigation, route }) {
                 onPress={handleSendOTP}
                 disabled={loading}
               >
-                <Text style={styles.resendText}>Resend OTP</Text>
+                <Text style={styles.resendText}>Didn't receive it? Resend OTP</Text>
               </TouchableOpacity>
             </>
           )}
@@ -254,7 +265,7 @@ export default function ForgotPasswordScreen({ navigation, route }) {
                 <Text style={styles.inputIcon}>🔒</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="Enter new password"
+                  placeholder="Enter new password (min 6 chars)"
                   placeholderTextColor="#aaa"
                   value={newPassword}
                   onChangeText={setNewPassword}
@@ -273,7 +284,7 @@ export default function ForgotPasswordScreen({ navigation, route }) {
                 <Text style={styles.inputIcon}>🔒</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="Confirm new password"
+                  placeholder="Confirm your new password"
                   placeholderTextColor="#aaa"
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
@@ -281,6 +292,16 @@ export default function ForgotPasswordScreen({ navigation, route }) {
                   editable={!loading}
                 />
               </View>
+
+              {/* Password match indicator */}
+              {confirmPassword.length > 0 && (
+                <Text style={[
+                  styles.matchText,
+                  { color: newPassword === confirmPassword ? '#1D9E75' : '#FF6B6B' }
+                ]}>
+                  {newPassword === confirmPassword ? '✅ Passwords match' : '❌ Passwords do not match'}
+                </Text>
+              )}
 
               <TouchableOpacity
                 style={[styles.btn, loading && styles.btnDisabled]}
@@ -344,7 +365,8 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 14, color: '#888',
     textAlign: 'center',
-    paddingHorizontal: 30
+    paddingHorizontal: 30,
+    lineHeight: 20,
   },
   stepRow: {
     flexDirection: 'row',
@@ -376,7 +398,8 @@ const styles = StyleSheet.create({
   },
   inputIcon: { fontSize: 18 },
   input: { flex: 1, fontSize: 15, color: '#333' },
-  otpInput: { fontSize: 22, fontWeight: '700', letterSpacing: 8 },
+  otpInput: { fontSize: 24, fontWeight: '700', letterSpacing: 10 },
+  matchText: { fontSize: 13, marginBottom: 16, fontWeight: '600' },
   btn: {
     backgroundColor: '#6C63FF',
     borderRadius: 14,
@@ -387,8 +410,8 @@ const styles = StyleSheet.create({
   },
   btnDisabled: { opacity: 0.65 },
   btnText: { color: '#fff', fontSize: 17, fontWeight: '700' },
-  resendBtn: { alignItems: 'center', paddingVertical: 8 },
+  resendBtn: { alignItems: 'center', paddingVertical: 10 },
   resendText: { color: '#6C63FF', fontSize: 14, fontWeight: '600' },
-  loginLink: { alignItems: 'center', marginTop: 16 },
+  loginLink: { alignItems: 'center', marginTop: 20 },
   loginLinkText: { color: '#888', fontSize: 14 },
 });

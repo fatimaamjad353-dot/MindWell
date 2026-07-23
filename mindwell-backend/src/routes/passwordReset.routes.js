@@ -1,17 +1,19 @@
 // src/routes/passwordReset.routes.js
 const express = require('express');
 const router = express.Router();
-const passwordResetController = require('../controllers/passwordReset.controller');
+const {
+    requestPasswordReset,
+    verifyResetOTP,
+    resetPassword
+} = require('../controllers/passwordReset.controller');
 
-// ─── Password Reset Routes ─────────────────────────────────────
+// Request password reset — sends OTP to email
+router.post('/request', requestPasswordReset);
 
-// Request password reset (send email with link)
-router.post('/request', passwordResetController.requestPasswordReset);
+// Verify OTP
+router.post('/verify-otp', verifyResetOTP);
 
-// Verify reset token
-router.get('/verify', passwordResetController.verifyResetToken);
-
-// Reset password
-router.post('/reset', passwordResetController.resetPassword);
+// Reset password with OTP
+router.post('/reset', resetPassword);
 
 module.exports = router;

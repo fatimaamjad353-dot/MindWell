@@ -15,6 +15,7 @@ const paymentRoutes = require('./src/routes/payment.routes');
 const adminRoutes = require('./src/routes/admin.routes');
 const recommenderRoutes = require('./src/routes/recommender.routes');
 const psychiatristRoutes = require('./src/routes/psychiatrist.routes');
+const passwordResetRoutes = require('./src/routes/passwordReset.routes'); // ✅ ADD
 
 const app = express();
 
@@ -25,7 +26,7 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// ─── ✅ Stripe Webhook MUST come BEFORE express.json() ────────
+// ─── Stripe Webhook MUST come BEFORE express.json() ──────────
 app.post(
   '/api/payments/webhook',
   express.raw({ type: 'application/json' }),
@@ -56,6 +57,9 @@ app.use('/api', (req, res, next) => {
 // Auth
 app.use('/api/auth', authRoutes);
 
+// Password Reset ✅ ADD
+app.use('/api/password-reset', passwordResetRoutes);
+
 // AI — recommender BEFORE general ai
 app.use('/api/ai/recommender', recommenderRoutes);
 app.use('/api/ai', aiRoutes);
@@ -66,7 +70,7 @@ app.use('/api/mood', moodRoutes);
 // Sessions
 app.use('/api/sessions', sessionRoutes);
 
-// Payments — webhook handled above separately
+// Payments
 app.use('/api/payments', paymentRoutes);
 
 // Admin
@@ -84,8 +88,7 @@ app.get('/api/health', (req, res) => {
     database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
     services: {
       ai: process.env.AI_SERVICE_URL || 'http://localhost:5010',
-      stripe: process.env.STRIPE_SECRET_KEY ? 'configured' : 'not configured',
-      ngrok: 'https://sliver-landslide-coping.ngrok-free.dev'
+      stripe: process.env.STRIPE_SECRET_KEY ? 'configured' : 'not configured'
     }
   });
 });

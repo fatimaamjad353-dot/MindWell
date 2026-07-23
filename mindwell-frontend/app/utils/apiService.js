@@ -1,7 +1,7 @@
 // app/utils/apiService.js
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// ✅ Use ngrok URL — no more IP changes breaking the app
+// ✅ Update this URL when ngrok restarts
 export const API_BASE_URL = 'https://sliver-landslide-coping.ngrok-free.dev/api';
 export const buildApiUrl = (path) => `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
 
@@ -19,6 +19,11 @@ export const setAuthToken = async (token) => {
 };
 
 export const getAuthToken = async () => {
+  return await AsyncStorage.getItem(AUTH_TOKEN_KEY);
+};
+
+// ✅ Alias used by AdminScreen
+export const getStoredToken = async () => {
   return await AsyncStorage.getItem(AUTH_TOKEN_KEY);
 };
 
@@ -101,11 +106,44 @@ export const loginAdmin = (data) =>
 export const registerAdmin = (data) =>
   request({ path: '/auth/admin/register', method: 'POST', body: data });
 
+// ─── OTP (Registration email verification) ────────────────────
+export const sendOTP = (data) =>
+  request({ path: '/auth/send-otp', method: 'POST', body: data });
+export const verifyOTP = (data) =>
+  request({ path: '/auth/verify-otp', method: 'POST', body: data });
+export const resendOTP = (data) =>
+  request({ path: '/auth/send-otp', method: 'POST', body: data });
+
+// ─── Password Reset ───────────────────────────────────────────
+export const requestPasswordReset = (data) =>
+  request({ path: '/password-reset/request', method: 'POST', body: data });
+
+// ✅ Used by ResetPasswordScreen — verifies token via GET
+export const verifyResetToken = (token, role) =>
+  request({ path: `/password-reset/verify?token=${token}&role=${role}` });
+
+// ✅ Used by ResetPasswordScreen — resets password
+export const resetPassword = (data) =>
+  request({ path: '/password-reset/reset', method: 'POST', body: data });
+
+export const verifyResetOTP = (data) =>
+  request({ path: '/password-reset/verify-otp', method: 'POST', body: data });
+
 // ─── Mood ─────────────────────────────────────────────────────
 export const logMood = (data) =>
   request({ path: '/mood/log', method: 'POST', body: data });
+
+// ✅ Alias used by MoodLogScreen and PatientDashboard
+export const logMoodEntry = (data) =>
+  request({ path: '/mood/log', method: 'POST', body: data });
+
 export const getAllMoods = () =>
   request({ path: '/mood/all' });
+
+// ✅ Alias used by PatientDashboard and ProgressScreen
+export const getMoodEntries = () =>
+  request({ path: '/mood/all' });
+
 export const getTodayMood = () =>
   request({ path: '/mood/today' });
 export const getWeeklySummary = () =>
@@ -166,6 +204,11 @@ export const getPsychiatristSessions = (status) =>
   request({ path: `/psychiatrist/sessions${status ? `?status=${status}` : ''}` });
 export const getPsychiatristPendingRequests = () =>
   request({ path: '/psychiatrist/sessions/pending' });
+
+// ✅ Alias used by PsychAppointmentsScreen
+export const getPendingRequests = () =>
+  request({ path: '/psychiatrist/sessions/pending' });
+
 export const confirmSessionApi = (id, data) =>
   request({ path: `/psychiatrist/sessions/${id}/confirm`, method: 'PATCH', body: data });
 export const rejectSessionApi = (id) =>
@@ -190,13 +233,23 @@ export const getPendingPsychiatrists = () =>
   request({ path: '/admin/psychiatrists/pending' });
 export const verifyPsychiatrist = (id) =>
   request({ path: `/admin/psychiatrists/verify/${id}`, method: 'PUT' });
+export const suspendPatient = (id) =>
+  request({ path: `/admin/patients/suspend/${id}`, method: 'PUT' });
+export const suspendPsychiatrist = (id) =>
+  request({ path: `/admin/psychiatrists/suspend/${id}`, method: 'PUT' });
 export const getAllSessions = () =>
   request({ path: '/admin/sessions' });
 export const getAllPayments = () =>
   request({ path: '/admin/payments' });
+
 // ─── Consent ──────────────────────────────────────────────────
 export const getConsent = () =>
   request({ path: '/auth/patient/consent' });
-
 export const updateConsent = (consent) =>
   request({ path: '/auth/patient/consent', method: 'PATCH', body: { consent } });
+
+// ─── Patient Profile (uses real DB) ───────────────────────────
+export const getPatientProfile = () =>
+  request({ path: '/auth/patient/profile' });
+export const updatePatientProfile = (data) =>
+  request({ path: '/auth/patient/profile', method: 'PUT', body: data });
