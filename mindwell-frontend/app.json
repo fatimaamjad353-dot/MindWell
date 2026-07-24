@@ -26,7 +26,21 @@
           "speechRecognitionPermission": "Allow MindWell to recognize your speech"
         }
       ],
-      "@twilio/video-react-native-sdk"
+      "@twilio/video-react-native-sdk",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "buildToolsVersion": "35.0.0",
+            "kotlinVersion": "1.9.0"
+          },
+          "ios": {
+            "deploymentTarget": "13.4"
+          }
+        }
+      ]
     ],
     "android": {
       "adaptiveIcon": {
