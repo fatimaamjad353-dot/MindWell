@@ -1083,11 +1083,6 @@
   resolved "https://registry.yarnpkg.com/@expo/schema-utils/-/schema-utils-0.1.9.tgz#48fa4971f760de7a6427a56f02aaf89889929316"
   integrity sha512-t9bYwG4Z0yCVzHYJoDMci1OFq2FkBkhStlfUGSkspKYTwB/84+x6sY+CXCgdhkQNQtvWaugW5KUs9YZfAXq9Sg==
 
-"@expo/schema-utils@^57.0.2":
-  version "57.0.2"
-  resolved "https://registry.yarnpkg.com/@expo/schema-utils/-/schema-utils-57.0.2.tgz#abbce2902bd23a338691d600815a6093cc6f4403"
-  integrity sha512-fMu/jyN0l1Wzv7XkeWR4IYCx1M8ryui3FdBNGrWwbRgJ7EhxXxK8E2jxP2W3pbgUwUY0V3hG8+GyfCZwny+Lxw==
-
 "@expo/sdk-runtime-versions@^1.0.0":
   version "1.0.0"
   resolved "https://registry.yarnpkg.com/@expo/sdk-runtime-versions/-/sdk-runtime-versions-1.0.0.tgz#d7ebd21b19f1c6b0395e50d78da4416941c57f7c"
@@ -1495,7 +1490,7 @@
   resolved "https://registry.yarnpkg.com/@stripe/stripe-react-native/-/stripe-react-native-0.50.3.tgz#4b80e55807a297127d8bd109c304309bbf179cf1"
   integrity sha512-nzOjqZXQKdM7y33Em2JZxCTAgf/q/J51IJQ50XtwIL0QT6Jt5WSmfKm9rGmBhoXxxG4DcXu/qxJeAHlhcPDGQg==
 
-"@twilio/video-react-native-sdk@^3.5.0":
+"@twilio/video-react-native-sdk@*":
   version "3.5.0"
   resolved "https://registry.yarnpkg.com/@twilio/video-react-native-sdk/-/video-react-native-sdk-3.5.0.tgz#6f39a331b9d5030286fae41129dc7d4e418fe36c"
   integrity sha512-Kp2avkvgGZMpUPSt+FIdHl3deDWG/7M9rHAyp/3/rnUWs46qX1c7hIR24wklAOqGHLpqtZz8XqEDPjrxVbyfaw==
@@ -2527,13 +2522,12 @@ expo-asset@~12.0.13:
     "@expo/image-utils" "^0.8.8"
     expo-constants "~18.0.13"
 
-expo-build-properties@^57.0.7:
-  version "57.0.7"
-  resolved "https://registry.yarnpkg.com/expo-build-properties/-/expo-build-properties-57.0.7.tgz#11335fc9f8f2840046ea08d4ef6e942e6abc03d6"
-  integrity sha512-yo/2rp7tmWdmwHa2cA2EgOQNKmihNivTAiB9Dcg2s20b4g+QasGDyq4aOmwifUaLjK9bIRUs4D4xX5HzjSL1Hw==
+expo-build-properties@~0.13.2:
+  version "0.13.3"
+  resolved "https://registry.yarnpkg.com/expo-build-properties/-/expo-build-properties-0.13.3.tgz#6b96d0486148fca6e74e62c7c502c0a9990931aa"
+  integrity sha512-gw7AYP+YF50Gr912BedelRDTfR4GnUEn9p5s25g4nv0hTJGWpBZdCYR5/Oi2rmCHJXxBqhPjxzV7JRh72fntLg==
   dependencies:
-    "@expo/schema-utils" "^57.0.2"
-    resolve-from "^5.0.0"
+    ajv "^8.11.0"
     semver "^7.6.0"
 
 expo-constants@~18.0.13:
