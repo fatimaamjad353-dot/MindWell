@@ -25,20 +25,6 @@
           "microphonePermission": "Allow MindWell to use your microphone for voice input",
           "speechRecognitionPermission": "Allow MindWell to recognize your speech"
         }
-      ],
-      [
-        "expo-build-properties",
-        {
-          "android": {
-            "kotlinVersion": "1.9.0",
-            "compileSdkVersion": 35,
-            "targetSdkVersion": 35,
-            "buildToolsVersion": "35.0.0"
-          },
-          "ios": {
-            "deploymentTarget": "15.1"
-          }
-        }
       ]
     ],
     "android": {
