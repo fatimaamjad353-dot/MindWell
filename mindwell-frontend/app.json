@@ -25,7 +25,8 @@
           "microphonePermission": "Allow MindWell to use your microphone for voice input",
           "speechRecognitionPermission": "Allow MindWell to recognize your speech"
         }
-      ]
+      ],
+      "@twilio/video-react-native-sdk"
     ],
     "android": {
       "adaptiveIcon": {
@@ -37,7 +38,9 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.INTERNET",
         "android.permission.CAMERA",
-        "android.permission.MODIFY_AUDIO_SETTINGS"
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_CONNECT"
       ]
     },
     "ios": {
@@ -45,7 +48,8 @@
       "bundleIdentifier": "com.mindwell.app",
       "infoPlist": {
         "NSSpeechRecognitionUsageDescription": "Allow MindWell to recognize your speech",
-        "NSMicrophoneUsageDescription": "Allow MindWell to use your microphone for voice input"
+        "NSMicrophoneUsageDescription": "Allow MindWell to use your microphone for voice input",
+        "NSCameraUsageDescription": "Allow MindWell to use your camera for video sessions"
       }
     },
     "web": {
