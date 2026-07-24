@@ -253,3 +253,6 @@ export const getPatientProfile = () =>
   request({ path: '/auth/patient/profile' });
 export const updatePatientProfile = (data) =>
   request({ path: '/auth/patient/profile', method: 'PUT', body: data });
+// ─── Twilio ───────────────────────────────────────────────────
+export const getTwilioToken = (data) =>
+  request({ path: '/twilio/token', method: 'POST', body: data });

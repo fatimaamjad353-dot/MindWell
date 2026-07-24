@@ -342,17 +342,22 @@ export default function PsychScheduleScreen({ navigation }) {
                     {/* Confirmed — join or complete */}
                     {session.status === 'Confirmed' && (
                       <>
-                        {session.meetingLink ? (
-                          <TouchableOpacity
-                            style={styles.joinBtn}
-                            onPress={() => navigation.navigate('SessionRoom', {
-                              session,
-                              meetingLink: session.meetingLink
-                            })}
-                          >
-                            <Text style={styles.joinBtnText}>📹 Join Session</Text>
-                          </TouchableOpacity>
-                        ) : null}
+                        {/* ✅ Always show Join Session for confirmed sessions */}
+                        <TouchableOpacity
+                          style={styles.joinBtn}
+                          onPress={() => navigation.navigate('TwilioCall', {
+                            role: 'psychologist',
+                            session: {
+                              id: session._id,
+                              patient: session.patientId?.name || 'Patient',
+                              therapist: 'You',
+                              type: session.sessionType || 'Video',
+                              meetingLink: session.meetingLink || ''
+                            }
+                          })}
+                        >
+                          <Text style={styles.joinBtnText}>📹 Join Session</Text>
+                        </TouchableOpacity>
                         <TouchableOpacity
                           style={styles.completeBtn}
                           onPress={() => handleComplete(session._id)}

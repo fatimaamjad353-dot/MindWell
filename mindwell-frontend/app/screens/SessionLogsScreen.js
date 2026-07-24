@@ -247,15 +247,21 @@ export default function SessionLogsScreen({ navigation, route }) {
                 {/* Action Buttons */}
                 <View style={styles.cardActions}>
                   {/* Join button for confirmed upcoming sessions */}
-                  {session.status === 'Confirmed' && !isPast && session.meetingLink ? (
+                  {session.status === 'Confirmed' && !isPast ? (
                     <TouchableOpacity
                       style={styles.joinBtn}
-                      onPress={() => navigation.navigate('SessionRoom', {
-                        session,
-                        meetingLink: session.meetingLink
+                      onPress={() => navigation.navigate('TwilioCall', {
+                        role: 'patient',
+                        session: {
+                          id: session._id,
+                          therapist: session.psychiatristId?.name || 'Your Therapist',
+                          patient: 'You',
+                          type: session.sessionType || 'Video',
+                          meetingLink: session.meetingLink || ''
+                        }
                       })}
                     >
-                      <Text style={styles.joinBtnText}>Join Session</Text>
+                      <Text style={styles.joinBtnText}>📹 Join Session</Text>
                     </TouchableOpacity>
                   ) : null}
 

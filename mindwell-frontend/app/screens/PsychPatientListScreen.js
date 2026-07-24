@@ -168,7 +168,7 @@ export default function PsychPatientListScreen({ navigation }) {
                 style={[styles.patientCard, { borderLeftColor: riskStyle.border }]}
                 onPress={() => navigation.navigate('PsychPatientSummary', {
                   // ✅ Fixed: use _id which is what backend returns
-                  patientId: patient._id || patient.id,
+                  patientId: patient.id || patient._id,
                   patientName: patient.name
                 })}
                 activeOpacity={0.7}

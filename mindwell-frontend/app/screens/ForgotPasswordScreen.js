@@ -10,21 +10,17 @@ import { request } from '../utils/apiService';
 export default function ForgotPasswordScreen({ navigation, route }) {
   const role = route.params?.role || 'patient';
 
-  const [step, setStep] = useState(1); // 1=email, 2=otp, 3=newpassword
+  const [step, setStep] = useState(1); // 1=email, 2=otp
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
 
-  // ─── Step 1: Send OTP to email ────────────────────────────
+  // ─── Step 1: Send OTP ──────────────────────────────────────
   const handleSendOTP = async () => {
     if (!email.trim()) {
       Alert.alert('Required', 'Please enter your email address');
       return;
     }
-
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email.trim())) {
       Alert.alert('Invalid Email', 'Please enter a valid email address');
@@ -33,8 +29,8 @@ export default function ForgotPasswordScreen({ navigation, route }) {
 
     setLoading(true);
     try {
-      const result = await request({
-        path: '/password-reset/request', // ✅ correct route
+      await request({
+        path: '/password-reset/request',
         method: 'POST',
         body: { email: email.trim().toLowerCase(), role }
       });
@@ -52,13 +48,12 @@ export default function ForgotPasswordScreen({ navigation, route }) {
     }
   };
 
-  // ─── Step 2: Verify OTP ────────────────────────────────────
+  // ─── Step 2: Verify OTP then go to ResetPasswordScreen ────
   const handleVerifyOTP = async () => {
     if (!otp.trim()) {
       Alert.alert('Required', 'Please enter the OTP from your email');
       return;
     }
-
     if (otp.length !== 6) {
       Alert.alert('Invalid OTP', 'OTP must be 6 digits');
       return;
@@ -67,71 +62,23 @@ export default function ForgotPasswordScreen({ navigation, route }) {
     setLoading(true);
     try {
       await request({
-        path: '/password-reset/verify-otp', // ✅ correct route
+        path: '/password-reset/verify-otp',
         method: 'POST',
         body: { email: email.trim().toLowerCase(), otp: otp.trim(), role }
       });
 
-      setStep(3);
+      // ✅ Navigate to ResetPasswordScreen with email + otp + role
+      navigation.navigate('ResetPassword', {
+        email: email.trim().toLowerCase(),
+        otp: otp.trim(),
+        role
+      });
 
     } catch (error) {
       Alert.alert('Invalid OTP', error.message || 'OTP verification failed. Please try again.');
     } finally {
       setLoading(false);
     }
-  };
-
-  // ─── Step 3: Reset Password ────────────────────────────────
-  const handleResetPassword = async () => {
-    if (!newPassword.trim()) {
-      Alert.alert('Required', 'Please enter a new password');
-      return;
-    }
-    if (newPassword.length < 6) {
-      Alert.alert('Too Short', 'Password must be at least 6 characters');
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      Alert.alert('Mismatch', 'Passwords do not match');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      await request({
-        path: '/password-reset/reset', // ✅ correct route
-        method: 'POST',
-        body: {
-          email: email.trim().toLowerCase(),
-          otp: otp.trim(),
-          newPassword,
-          role
-        }
-      });
-
-      Alert.alert(
-        '✅ Password Reset Successful',
-        'Your password has been reset. Please login with your new password.',
-        [{ text: 'Login Now', onPress: () => navigation.replace('Login', { role }) }]
-      );
-
-    } catch (error) {
-      Alert.alert('Error', error.message || 'Could not reset password. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const getStepTitle = () => {
-    if (step === 1) return 'Forgot Password';
-    if (step === 2) return 'Enter OTP';
-    return 'New Password';
-  };
-
-  const getStepSubtitle = () => {
-    if (step === 1) return 'Enter your email to receive a 6-digit reset code';
-    if (step === 2) return `Enter the 6-digit OTP sent to ${email}`;
-    return 'Create a strong new password';
   };
 
   return (
@@ -149,11 +96,8 @@ export default function ForgotPasswordScreen({ navigation, route }) {
           <TouchableOpacity
             style={styles.backBtn}
             onPress={() => {
-              if (step > 1) {
-                setStep(step - 1);
-              } else {
-                navigation.goBack();
-              }
+              if (step > 1) setStep(step - 1);
+              else navigation.goBack();
             }}
           >
             <Text style={styles.backBtnText}>←</Text>
@@ -163,21 +107,22 @@ export default function ForgotPasswordScreen({ navigation, route }) {
         {/* Icon */}
         <View style={styles.iconSection}>
           <View style={styles.iconCircle}>
-            <Text style={styles.iconEmoji}>
-              {step === 1 ? '🔑' : step === 2 ? '📧' : '🔒'}
-            </Text>
+            <Text style={styles.iconEmoji}>{step === 1 ? '🔑' : '📧'}</Text>
           </View>
-          <Text style={styles.title}>{getStepTitle()}</Text>
-          <Text style={styles.subtitle}>{getStepSubtitle()}</Text>
+          <Text style={styles.title}>
+            {step === 1 ? 'Forgot Password' : 'Enter OTP'}
+          </Text>
+          <Text style={styles.subtitle}>
+            {step === 1
+              ? 'Enter your email to receive a 6-digit reset code'
+              : `Enter the 6-digit OTP sent to ${email}`}
+          </Text>
         </View>
 
         {/* Step Indicator */}
         <View style={styles.stepRow}>
-          {[1, 2, 3].map(s => (
-            <View
-              key={s}
-              style={[styles.stepDot, step >= s && styles.stepDotActive]}
-            />
+          {[1, 2].map(s => (
+            <View key={s} style={[styles.stepDot, step >= s && styles.stepDotActive]} />
           ))}
         </View>
 
@@ -208,11 +153,10 @@ export default function ForgotPasswordScreen({ navigation, route }) {
                 onPress={handleSendOTP}
                 disabled={loading}
               >
-                {loading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.btnText}>Send Reset OTP →</Text>
-                )}
+                {loading
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={styles.btnText}>Send Reset OTP →</Text>
+                }
               </TouchableOpacity>
             </>
           )}
@@ -240,11 +184,10 @@ export default function ForgotPasswordScreen({ navigation, route }) {
                 onPress={handleVerifyOTP}
                 disabled={loading}
               >
-                {loading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.btnText}>Verify OTP →</Text>
-                )}
+                {loading
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={styles.btnText}>Verify OTP →</Text>
+                }
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -257,76 +200,12 @@ export default function ForgotPasswordScreen({ navigation, route }) {
             </>
           )}
 
-          {/* Step 3 — New Password */}
-          {step === 3 && (
-            <>
-              <Text style={styles.inputLabel}>New Password</Text>
-              <View style={styles.inputBox}>
-                <Text style={styles.inputIcon}>🔒</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter new password (min 6 chars)"
-                  placeholderTextColor="#aaa"
-                  value={newPassword}
-                  onChangeText={setNewPassword}
-                  secureTextEntry={!showPassword}
-                  editable={!loading}
-                />
-                <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                  <Text>{showPassword ? '🙈' : '👁️'}</Text>
-                </TouchableOpacity>
-              </View>
-
-              <Text style={[styles.inputLabel, { marginTop: 14 }]}>
-                Confirm Password
-              </Text>
-              <View style={styles.inputBox}>
-                <Text style={styles.inputIcon}>🔒</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Confirm your new password"
-                  placeholderTextColor="#aaa"
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  secureTextEntry={!showPassword}
-                  editable={!loading}
-                />
-              </View>
-
-              {/* Password match indicator */}
-              {confirmPassword.length > 0 && (
-                <Text style={[
-                  styles.matchText,
-                  { color: newPassword === confirmPassword ? '#1D9E75' : '#FF6B6B' }
-                ]}>
-                  {newPassword === confirmPassword ? '✅ Passwords match' : '❌ Passwords do not match'}
-                </Text>
-              )}
-
-              <TouchableOpacity
-                style={[styles.btn, loading && styles.btnDisabled]}
-                onPress={handleResetPassword}
-                disabled={loading}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.btnText}>Reset Password →</Text>
-                )}
-              </TouchableOpacity>
-            </>
-          )}
-
-          {/* Back to login */}
           <TouchableOpacity
             style={styles.loginLink}
             onPress={() => navigation.navigate('Login', { role })}
           >
-            <Text style={styles.loginLinkText}>
-              Back to Login
-            </Text>
+            <Text style={styles.loginLinkText}>Back to Login</Text>
           </TouchableOpacity>
-
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -336,77 +215,43 @@ export default function ForgotPasswordScreen({ navigation, route }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F0EFFF' },
   scrollContent: { flexGrow: 1, paddingBottom: 30 },
-  header: {
-    paddingTop: 50,
-    paddingHorizontal: 16,
-    paddingBottom: 8,
-  },
+  header: { paddingTop: 50, paddingHorizontal: 16, paddingBottom: 8 },
   backBtn: {
-    width: 40, height: 40,
-    borderRadius: 20,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 2,
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: '#fff', alignItems: 'center',
+    justifyContent: 'center', elevation: 2,
   },
   backBtnText: { fontSize: 20, color: '#6C63FF', fontWeight: '700' },
   iconSection: { alignItems: 'center', paddingVertical: 24 },
   iconCircle: {
-    width: 80, height: 80,
-    borderRadius: 40,
-    backgroundColor: '#6C63FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-    elevation: 4,
+    width: 80, height: 80, borderRadius: 40,
+    backgroundColor: '#6C63FF', alignItems: 'center',
+    justifyContent: 'center', marginBottom: 16, elevation: 4,
   },
   iconEmoji: { fontSize: 38 },
   title: { fontSize: 26, fontWeight: '800', color: '#1a1a2e', marginBottom: 8 },
   subtitle: {
     fontSize: 14, color: '#888',
-    textAlign: 'center',
-    paddingHorizontal: 30,
-    lineHeight: 20,
+    textAlign: 'center', paddingHorizontal: 30, lineHeight: 20,
   },
-  stepRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 8,
-    marginBottom: 24,
-  },
-  stepDot: {
-    width: 8, height: 8,
-    borderRadius: 4,
-    backgroundColor: '#ddd',
-  },
+  stepRow: { flexDirection: 'row', justifyContent: 'center', gap: 8, marginBottom: 24 },
+  stepDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#ddd' },
   stepDotActive: { backgroundColor: '#6C63FF', width: 24 },
   form: { paddingHorizontal: 24 },
-  inputLabel: {
-    fontSize: 14, fontWeight: '600',
-    color: '#1a1a2e', marginBottom: 8
-  },
+  inputLabel: { fontSize: 14, fontWeight: '600', color: '#1a1a2e', marginBottom: 8 },
   inputBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    elevation: 2,
-    gap: 10,
-    marginBottom: 20,
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#fff', borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 12,
+    elevation: 2, gap: 10, marginBottom: 20,
   },
   inputIcon: { fontSize: 18 },
   input: { flex: 1, fontSize: 15, color: '#333' },
   otpInput: { fontSize: 24, fontWeight: '700', letterSpacing: 10 },
-  matchText: { fontSize: 13, marginBottom: 16, fontWeight: '600' },
   btn: {
-    backgroundColor: '#6C63FF',
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: 'center',
-    elevation: 3,
-    marginBottom: 12,
+    backgroundColor: '#6C63FF', borderRadius: 14,
+    paddingVertical: 16, alignItems: 'center',
+    elevation: 3, marginBottom: 12,
   },
   btnDisabled: { opacity: 0.65 },
   btnText: { color: '#fff', fontSize: 17, fontWeight: '700' },
